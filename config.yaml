@@ -1,0 +1,23 @@
+solana:
+  network: "devnet"  # devnet, testnet, mainnet
+  rpc_url: "https://api.devnet.solana.com"
+  commitment: "confirmed"
+  
+wallet:
+  keypair_path: "./wallet.json"
+  
+faucet:
+  airdrop_amount: 1.0  # SOL amount
+  
+logging:
+  level: "info"
+  format: "pretty"
+
+jupiter:
+  api_url: "https://quote-api.jup.ag/v6"
+  price_api_url: "https://price.jup.ag/v4"
+  slippage_bps: 50  # 0.5%
+  
+tokens:
+  sol: "So11111111111111111111111111111111111111112"
+  usdc: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
