@@ -10,7 +10,8 @@ A disruptive, terminal-based Rust client for basic Solana operations with clean 
 ✅ **Transaction Creation** - Create transfer transactions  
 ✅ **Transaction Broadcasting** - Send transactions to the network  
 ✅ **Token Swaps** - Jupiter-powered SOL ↔ USDC swaps  
-✅ **Real-time Pricing** - Get current token prices  
+✅ **Token Discovery** - Scan wallet for all SPL tokens with balances  
+✅ **Real-time Pricing** - Get current token prices with USD values  
 ✅ **Token Search** - Find tokens by symbol, name, or address  
 ✅ **Interactive Menu** - Clean terminal interface  
 ✅ **YAML Configuration** - Centralized parameter management  
@@ -34,6 +35,7 @@ cargo run -- faucet --amount 2.0
 cargo run -- swap --from SOL --to USDC --amount 1.5
 cargo run -- price --token SOL
 cargo run -- search --query "ray"
+cargo run -- list-tokens
 ```
 
 ## Configuration

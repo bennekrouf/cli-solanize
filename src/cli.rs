@@ -1,7 +1,7 @@
 use crate::{config::Config, jupiter, token, transaction, wallet};
 use anyhow::Result;
 use dialoguer::{Confirm, Input, Select, theme::ColorfulTheme};
-use tracing::error;
+use tracing::{error, info};
 
 pub struct InteractiveMenu {
     config: Config,
@@ -26,6 +26,7 @@ impl InteractiveMenu {
                 "🔄 Swap Tokens (Jupiter)",
                 "💲 Get Token Price",
                 "🔍 Search Tokens",
+                "🪙 List Wallet Tokens",
                 "⚙️  Show Config",
                 "❌ Exit",
             ];
@@ -45,8 +46,9 @@ impl InteractiveMenu {
                 5 => self.handle_swap_tokens().await?,
                 6 => self.handle_get_price().await?,
                 7 => self.handle_search_tokens().await?,
-                8 => self.handle_show_config()?,
-                9 => {
+                8 => self.handle_list_wallet_tokens().await?,
+                9 => self.handle_show_config()?,
+                10 => {
                     println!("👋 Goodbye!");
                     break;
                 }
@@ -54,6 +56,18 @@ impl InteractiveMenu {
             }
 
             println!("\n{}\n", "=".repeat(50));
+        }
+
+        Ok(())
+    }
+
+    async fn handle_list_wallet_tokens(&self) -> Result<()> {
+        match wallet::list_wallet_tokens(&self.config).await {
+            Ok(_) => {}
+            Err(e) => {
+                error!("Failed to list wallet tokens: {}", e);
+                println!("❌ Error: {}", e);
+            }
         }
 
         Ok(())
@@ -168,14 +182,30 @@ impl InteractiveMenu {
     async fn handle_swap_tokens(&self) -> Result<()> {
         println!("🔄 Token Swap");
 
+        // First, show available tokens in wallet
+        let wallet_tokens = wallet::get_wallet_tokens(&self.config).await?;
+
+        if wallet_tokens.is_empty() {
+            println!("❌ No tokens found in wallet. Get some tokens first!");
+            return Ok(());
+        }
+
+        println!("\n💼 Available tokens in your wallet:");
+        for (i, token) in wallet_tokens.iter().enumerate().take(10) {
+            println!(
+                "{}. {} - {} tokens",
+                i + 1,
+                token.symbol,
+                wallet::format_balance(token.balance)
+            );
+        }
+
         let from_token: String = Input::with_theme(&ColorfulTheme::default())
-            .with_prompt("From token (SOL, USDC, or address)")
-            .default("SOL".to_string())
+            .with_prompt("From token (symbol or address)")
             .interact()?;
 
         let to_token: String = Input::with_theme(&ColorfulTheme::default())
-            .with_prompt("To token (SOL, USDC, or address)")
-            .default("USDC".to_string())
+            .with_prompt("To token (symbol or address)")
             .interact()?;
 
         let amount: f64 = Input::with_theme(&ColorfulTheme::default())
@@ -346,3 +376,4 @@ impl InteractiveMenu {
         Ok(())
     }
 }
+
