@@ -69,6 +69,8 @@ enum Commands {
         #[arg(short, long)]
         query: String,
     },
+    /// List all tokens in wallet
+    ListTokens,
 }
 
 #[tokio::main]
@@ -84,7 +86,15 @@ async fn main() -> Result<()> {
         .with_target(false);
 
     match config.logging.format.as_str() {
-        "json" => subscriber.json().init(),
+        "json" => {
+            #[cfg(feature = "json")]
+            subscriber.json().init();
+            #[cfg(not(feature = "json"))]
+            {
+                eprintln!("JSON logging not available, falling back to pretty format");
+                subscriber.pretty().init();
+            }
+        }
         _ => subscriber.pretty().init(),
     }
 
@@ -125,8 +135,10 @@ async fn main() -> Result<()> {
                 println!("{}: {} ({})", token.symbol, token.name, token.address);
             }
         }
+        Some(Commands::ListTokens) => {
+            wallet::list_wallet_tokens(&config).await?;
+        }
     }
 
     Ok(())
 }
-

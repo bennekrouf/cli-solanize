@@ -1,9 +1,24 @@
-use crate::{config::Config, error::SolanaClientError};
+use crate::{config::Config, error::SolanaClientError, token};
 use anyhow::Result;
-use solana_client::rpc_client::RpcClient;
+// use solana_account_decoder::{UiAccountEncoding, parse_token::UiTokenAccount};
+use solana_client::{
+    rpc_client::RpcClient,
+    // rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
+    // rpc_filter::{Memcmp, RpcFilterType},
+};
 use solana_sdk::signature::{Keypair, Signer};
 use std::fs;
 use tracing::{error, info};
+
+#[derive(Debug, Clone)]
+pub struct TokenBalance {
+    pub mint: String,
+    pub symbol: String,
+    pub name: String,
+    pub balance: f64,
+    pub decimals: u8,
+    pub ui_amount: Option<f64>,
+}
 
 pub async fn generate_wallet(config: &Config) -> Result<()> {
     info!("Generating new wallet");
@@ -22,6 +37,148 @@ pub async fn generate_wallet(config: &Config) -> Result<()> {
     println!("💾 Saved to: {}", config.wallet.keypair_path);
 
     Ok(())
+}
+
+pub async fn get_wallet_tokens(config: &Config) -> Result<Vec<TokenBalance>> {
+    let keypair = load_keypair(config).await?;
+    let client = RpcClient::new(&config.solana.rpc_url);
+
+    info!("Scanning wallet for SPL tokens");
+
+    let mut token_balances = Vec::new();
+
+    // First, add native SOL balance
+    let sol_balance = get_balance(config).await?;
+    if sol_balance > 0.0 {
+        token_balances.push(TokenBalance {
+            mint: config.tokens.sol.clone(),
+            symbol: "SOL".to_string(),
+            name: "Solana".to_string(),
+            balance: sol_balance,
+            decimals: 9,
+            ui_amount: Some(sol_balance),
+        });
+    }
+
+    // Get all SPL token accounts owned by this wallet
+    let accounts = client.get_token_accounts_by_owner(
+        &keypair.pubkey(),
+        solana_client::rpc_request::TokenAccountsFilter::ProgramId(spl_token::id()),
+    )?;
+
+    info!("Found {} token accounts", accounts.len());
+
+    // Process each token account
+    for account in accounts {
+        if let solana_account_decoder::UiAccountData::Json(token_account) = &account.account.data {
+            if let Some(info) = token_account.parsed.get("info").and_then(|v| v.as_object()) {
+                let mint = info
+                    .get("mint")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let token_amount = info.get("tokenAmount").and_then(|v| v.as_object());
+
+                if let Some(amount_info) = token_amount {
+                    let ui_amount = amount_info
+                        .get("uiAmount")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
+
+                    let decimals = amount_info
+                        .get("decimals")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as u8;
+
+                    // Skip accounts with zero balance
+                    if ui_amount <= 0.0 {
+                        continue;
+                    }
+
+                    // Try to get token info from Jupiter
+                    let (symbol, name) = match token::get_token_info(config, &mint).await {
+                        Ok(Some(token_info)) => (token_info.symbol, token_info.name),
+                        _ => {
+                            // Fallback: use mint address as symbol
+                            let short_mint = if mint.len() > 8 {
+                                format!("{}..{}", &mint[..4], &mint[mint.len() - 4..])
+                            } else {
+                                mint.clone()
+                            };
+                            (
+                                short_mint.clone(),
+                                format!("Unknown Token ({})", short_mint),
+                            )
+                        }
+                    };
+
+                    token_balances.push(TokenBalance {
+                        mint: mint.clone(),
+                        symbol,
+                        name,
+                        balance: ui_amount,
+                        decimals,
+                        ui_amount: Some(ui_amount),
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by balance descending
+    token_balances.sort_by(|a, b| {
+        b.balance
+            .partial_cmp(&a.balance)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    Ok(token_balances)
+}
+
+pub async fn list_wallet_tokens(config: &Config) -> Result<()> {
+    let tokens = get_wallet_tokens(config).await?;
+
+    if tokens.is_empty() {
+        println!("💸 No tokens found in wallet");
+        return Ok(());
+    }
+
+    println!("🪙 Wallet Token Holdings:");
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    for (i, token) in tokens.iter().enumerate() {
+        println!(
+            "{}. {} ({}) - {} tokens",
+            i + 1,
+            token.symbol,
+            token.name,
+            format_balance(token.balance)
+        );
+
+        // Show USD value if we can get price
+        if let Ok(price) = crate::jupiter::get_token_price(config, &token.symbol).await {
+            let usd_value = token.balance * price;
+            println!("   💲 ~${:.2} (${:.6} per token)", usd_value, price);
+        }
+
+        println!("   📍 {}", token.mint);
+        println!();
+    }
+
+    Ok(())
+}
+
+pub fn format_balance(balance: f64) -> String {
+    if balance >= 1_000_000.0 {
+        format!("{:.2}M", balance / 1_000_000.0)
+    } else if balance >= 1_000.0 {
+        format!("{:.2}K", balance / 1_000.0)
+    } else if balance >= 1.0 {
+        format!("{:.6}", balance)
+    } else {
+        format!("{:.9}", balance)
+    }
 }
 
 pub async fn load_keypair(config: &Config) -> Result<Keypair> {
@@ -44,7 +201,7 @@ pub async fn load_keypair(config: &Config) -> Result<Keypair> {
     let mut bytes = [0u8; 64];
     bytes.copy_from_slice(&keypair_bytes);
 
-    Ok(Keypair::from_bytes(&bytes)?)
+    Ok(Keypair::try_from(&bytes[..])?)
 }
 
 pub async fn get_balance(config: &Config) -> Result<f64> {
