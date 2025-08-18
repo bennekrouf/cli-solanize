@@ -1,13 +1,17 @@
 use crate::{config::Config, error::SolanaClientError, wallet::load_keypair};
 use anyhow::Result;
+use base64;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signer;
-use solana_sdk::{pubkey::Pubkey, transaction::Transaction};
+
+use solana_sdk::hash::Hash;
+use solana_sdk::transaction::VersionedTransaction;
 use std::str::FromStr;
 use tracing::{error, info};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct QuoteResponse {
     #[serde(rename = "inputMint")]
     pub input_mint: String,
@@ -106,20 +110,19 @@ pub struct SwapResponse {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PriceResponse {
-    pub data: std::collections::HashMap<String, PriceData>,
+pub struct PriceResponseV3 {
+    // V3 returns direct token mapping
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PriceData {
-    pub id: String,
-    #[serde(rename = "mintSymbol")]
-    pub mint_symbol: String,
-    #[serde(rename = "vsToken")]
-    pub vs_token: String,
-    #[serde(rename = "vsTokenSymbol")]
-    pub vs_token_symbol: String,
-    pub price: f64,
+pub struct PriceDataV3 {
+    #[serde(rename = "usdPrice")]
+    pub usd_price: f64,
+    #[serde(rename = "blockId")]
+    pub block_id: u64,
+    pub decimals: u8,
+    #[serde(rename = "priceChange24h")]
+    pub price_change_24h: f64,
 }
 
 pub async fn get_token_mint(config: &Config, symbol: &str) -> Result<String> {
@@ -195,8 +198,8 @@ pub async fn get_swap_transaction(
         fee_account: None,
         tracking_account: None,
         compute_unit_price_micro_lamports: Some(1000),
-        prioritization_fee_lamports: Some(1000),
-        as_legacy_transaction: false,
+        prioritization_fee_lamports: None,
+        as_legacy_transaction: true,
         use_token_ledger: false,
         destination_token_account: None,
     };
@@ -276,16 +279,22 @@ pub async fn swap_tokens(
     let swap_response = get_swap_transaction(config, quote, &keypair.pubkey()).await?;
 
     // Decode and sign transaction
-    let tx_bytes = bs58::decode(&swap_response.swap_transaction).into_vec()?;
-    let mut transaction: Transaction = bincode::deserialize(&tx_bytes)?;
+
+    let tx_bytes = base64::decode(&swap_response.swap_transaction)?;
+    let versioned_tx: VersionedTransaction = bincode::deserialize(&tx_bytes)?;
+    // let transaction = versioned_tx
+    //     .into_legacy_transaction()
+    //     .ok_or_else(|| anyhow::anyhow!("Failed to convert versioned transaction"))?;
 
     // Sign transaction
-    transaction.sign(&[&keypair], transaction.message.recent_blockhash);
+    // versioned_tx.try_sign(&[&keypair], Hash::default())?;
+
+    let signed_tx = VersionedTransaction::try_new(versioned_tx.message, &[&keypair])?;
 
     // Send transaction
     let client = solana_client::rpc_client::RpcClient::new(&config.solana.rpc_url);
 
-    match client.send_and_confirm_transaction(&transaction) {
+    match client.send_and_confirm_transaction(&signed_tx) {
         Ok(signature) => {
             println!("✅ Swap completed successfully!");
             println!("🔗 Signature: {}", signature);
@@ -315,11 +324,11 @@ pub async fn get_token_price(config: &Config, symbol: &str) -> Result<f64> {
     // Get token mint
     let mint = get_token_mint(config, symbol).await?;
 
-    let url = format!("{}/price", config.jupiter.price_api_url);
+    let url = format!("{}?ids={}", config.jupiter.price_api_url, mint);
 
     info!("Getting price for token: {}", symbol);
 
-    let response = client.get(&url).query(&[("ids", &mint)]).send().await?;
+    let response = client.get(&url).send().await?;
 
     if !response.status().is_success() {
         return Err(SolanaClientError::NetworkError {
@@ -328,10 +337,11 @@ pub async fn get_token_price(config: &Config, symbol: &str) -> Result<f64> {
         .into());
     }
 
-    let price_response: PriceResponse = response.json().await?;
+    // V3 API returns direct mapping: { "mint_address": { "usdPrice": 123.45, ... } }
+    let price_response: std::collections::HashMap<String, PriceDataV3> = response.json().await?;
 
-    if let Some(price_data) = price_response.data.get(&mint) {
-        Ok(price_data.price)
+    if let Some(price_data) = price_response.get(&mint) {
+        Ok(price_data.usd_price)
     } else {
         Err(SolanaClientError::InvalidAddress {
             address: format!("Price not found for: {}", symbol),

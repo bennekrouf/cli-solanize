@@ -15,7 +15,7 @@ logging:
 
 jupiter:
   api_url: "https://quote-api.jup.ag/v6"
-  price_api_url: "https://price.jup.ag/v6"
+  price_api_url: "https://lite-api.jup.ag/price/v3"
   slippage_bps: 50  # 0.5%
   
 tokens:
