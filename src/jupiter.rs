@@ -3,11 +3,9 @@ use anyhow::Result;
 use base64;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signer;
-
-use solana_sdk::hash::Hash;
 use solana_sdk::transaction::VersionedTransaction;
+use solana_sdk::{pubkey::Pubkey, signature::Keypair, transaction::Transaction};
 use std::str::FromStr;
 use tracing::{error, info};
 
@@ -67,7 +65,7 @@ pub struct SwapInfo {
     pub fee_mint: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SwapRequest {
     #[serde(rename = "quoteResponse")]
     pub quote_response: QuoteResponse,
@@ -93,7 +91,7 @@ pub struct SwapRequest {
     pub destination_token_account: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SwapResponse {
     #[serde(rename = "swapTransaction")]
     pub swap_transaction: String,
@@ -143,6 +141,94 @@ pub async fn get_token_mint(config: &Config, symbol: &str) -> Result<String> {
             }
         }
     }
+}
+
+pub async fn prepare_swap_transaction(
+    config: &Config,
+    from_symbol: &str,
+    to_symbol: &str,
+    amount: f64,
+    payer_pubkey: &Pubkey,
+) -> Result<(String, crate::web::QuoteInfo, Vec<String>, String)> {
+    // Get token mints
+    let input_mint = get_token_mint(config, from_symbol).await?;
+    let output_mint = get_token_mint(config, to_symbol).await?;
+
+    // Convert amount to smallest unit
+    let decimals = if from_symbol.to_uppercase() == "SOL" {
+        9
+    } else {
+        6
+    };
+    let amount_units = (amount * 10_f64.powi(decimals)) as u64;
+
+    info!(
+        "Preparing swap: {} {} for {} (payer: {})",
+        amount,
+        from_symbol.to_uppercase(),
+        to_symbol.to_uppercase(),
+        payer_pubkey
+    );
+
+    // Get quote
+    let quote = get_quote(config, &input_mint, &output_mint, amount_units).await?;
+
+    let out_amount_f64 = quote.out_amount.parse::<u64>()? as f64
+        / 10_f64.powi(if to_symbol.to_uppercase() == "SOL" {
+            9
+        } else {
+            6
+        });
+    let price_impact = quote.price_impact_pct.parse::<f64>()?;
+
+    info!(
+        "Quote: {} {} -> {:.6} {}, price impact: {:.4}%",
+        amount,
+        from_symbol.to_uppercase(),
+        out_amount_f64,
+        to_symbol.to_uppercase(),
+        price_impact
+    );
+
+    // Get swap transaction (unsigned)
+    let swap_response = get_swap_transaction(config, quote, payer_pubkey).await?;
+
+    // Decode versioned transaction to extract info
+    let tx_bytes = base64::decode(&swap_response.swap_transaction)?;
+    let versioned_tx: VersionedTransaction = bincode::deserialize(&tx_bytes)?;
+
+    // Extract required signers from the transaction
+    let required_signers = match &versioned_tx.message {
+        solana_sdk::message::VersionedMessage::Legacy(legacy_msg) => legacy_msg
+            .account_keys
+            .iter()
+            .take(legacy_msg.header.num_required_signatures as usize)
+            .map(|key| key.to_string())
+            .collect(),
+        solana_sdk::message::VersionedMessage::V0(v0_msg) => v0_msg
+            .account_keys
+            .iter()
+            .take(v0_msg.header.num_required_signatures as usize)
+            .map(|key| key.to_string())
+            .collect(),
+    };
+
+    // Get recent blockhash
+    let client = solana_client::rpc_client::RpcClient::new(&config.solana.rpc_url);
+    let recent_blockhash = client.get_latest_blockhash()?.to_string();
+
+    let quote_info = crate::web::QuoteInfo {
+        expected_output: out_amount_f64,
+        price_impact,
+        route_steps: 1, // Simplified for now
+    };
+
+    Ok((
+        swap_response.swap_transaction, // Return unsigned transaction as-is
+        quote_info,
+        required_signers,
+        recent_blockhash,
+    ))
 }
 
 pub async fn get_quote(
@@ -198,8 +284,8 @@ pub async fn get_swap_transaction(
         fee_account: None,
         tracking_account: None,
         compute_unit_price_micro_lamports: Some(1000),
-        prioritization_fee_lamports: None,
-        as_legacy_transaction: true,
+        prioritization_fee_lamports: Some(1000),
+        as_legacy_transaction: false,
         use_token_ledger: false,
         destination_token_account: None,
     };
@@ -279,22 +365,16 @@ pub async fn swap_tokens(
     let swap_response = get_swap_transaction(config, quote, &keypair.pubkey()).await?;
 
     // Decode and sign transaction
-
-    let tx_bytes = base64::decode(&swap_response.swap_transaction)?;
-    let versioned_tx: VersionedTransaction = bincode::deserialize(&tx_bytes)?;
-    // let transaction = versioned_tx
-    //     .into_legacy_transaction()
-    //     .ok_or_else(|| anyhow::anyhow!("Failed to convert versioned transaction"))?;
+    let tx_bytes = bs58::decode(&swap_response.swap_transaction).into_vec()?;
+    let mut transaction: Transaction = bincode::deserialize(&tx_bytes)?;
 
     // Sign transaction
-    // versioned_tx.try_sign(&[&keypair], Hash::default())?;
-
-    let signed_tx = VersionedTransaction::try_new(versioned_tx.message, &[&keypair])?;
+    transaction.sign(&[&keypair], transaction.message.recent_blockhash);
 
     // Send transaction
     let client = solana_client::rpc_client::RpcClient::new(&config.solana.rpc_url);
 
-    match client.send_and_confirm_transaction(&signed_tx) {
+    match client.send_and_confirm_transaction(&transaction) {
         Ok(signature) => {
             println!("✅ Swap completed successfully!");
             println!("🔗 Signature: {}", signature);
@@ -316,6 +396,86 @@ pub async fn swap_tokens(
     }
 
     Ok(())
+}
+
+pub async fn swap_tokens_with_keypair(
+    config: &Config,
+    from_symbol: &str,
+    to_symbol: &str,
+    amount: f64,
+    keypair: Option<&Keypair>,
+) -> Result<String> {
+    let kp = match keypair {
+        Some(k) => k,
+        None => &crate::wallet::load_keypair(config).await?,
+    };
+
+    // Get token mints
+    let input_mint = get_token_mint(config, from_symbol).await?;
+    let output_mint = get_token_mint(config, to_symbol).await?;
+
+    // Convert amount to smallest unit
+    let decimals = if from_symbol.to_uppercase() == "SOL" {
+        9
+    } else {
+        6
+    }; // USDC has 6 decimals
+    let amount_units = (amount * 10_f64.powi(decimals)) as u64;
+
+    info!(
+        "Swapping {} {} for {} with keypair {}",
+        amount,
+        from_symbol.to_uppercase(),
+        to_symbol.to_uppercase(),
+        kp.pubkey()
+    );
+
+    // Get quote
+    let quote = get_quote(config, &input_mint, &output_mint, amount_units).await?;
+
+    let out_amount_f64 = quote.out_amount.parse::<u64>()? as f64
+        / 10_f64.powi(if to_symbol.to_uppercase() == "SOL" {
+            9
+        } else {
+            6
+        });
+    let price_impact = quote.price_impact_pct.parse::<f64>()?;
+
+    info!(
+        "Quote: {} {} -> {:.6} {}, price impact: {:.4}%",
+        amount,
+        from_symbol.to_uppercase(),
+        out_amount_f64,
+        to_symbol.to_uppercase(),
+        price_impact
+    );
+
+    // Get swap transaction
+    let swap_response = get_swap_transaction(config, quote, &kp.pubkey()).await?;
+
+    // Decode versioned transaction
+    let tx_bytes = base64::decode(&swap_response.swap_transaction)?;
+    let versioned_tx: VersionedTransaction = bincode::deserialize(&tx_bytes)?;
+
+    // Sign versioned transaction by creating a new one with signers
+    let signed_tx = VersionedTransaction::try_new(versioned_tx.message, &[&kp])?;
+
+    // Send signed transaction
+    let client = solana_client::rpc_client::RpcClient::new(&config.solana.rpc_url);
+
+    match client.send_and_confirm_transaction(&signed_tx) {
+        Ok(signature) => {
+            info!("Swap completed: {}", signature);
+            Ok(signature.to_string())
+        }
+        Err(e) => {
+            error!("Swap failed: {}", e);
+            Err(crate::error::SolanaClientError::TransactionFailed {
+                reason: format!("Swap failed: {}", e),
+            }
+            .into())
+        }
+    }
 }
 
 pub async fn get_token_price(config: &Config, symbol: &str) -> Result<f64> {
@@ -349,4 +509,3 @@ pub async fn get_token_price(config: &Config, symbol: &str) -> Result<f64> {
         .into())
     }
 }
-

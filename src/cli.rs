@@ -1,7 +1,7 @@
 use crate::{config::Config, jupiter, token, transaction, wallet};
 use anyhow::Result;
 use dialoguer::{Confirm, Input, Select, theme::ColorfulTheme};
-use tracing::{error, info};
+use tracing::error;
 
 pub struct InteractiveMenu {
     config: Config,

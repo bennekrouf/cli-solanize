@@ -10,6 +10,7 @@ mod solana_client;
 mod token;
 mod transaction;
 mod wallet;
+mod web;
 
 use cli::InteractiveMenu;
 use config::Config;
@@ -71,6 +72,11 @@ enum Commands {
     },
     /// List all tokens in wallet
     ListTokens,
+    /// Start web server
+    WebServer {
+        #[arg(short, long, default_value = "8000")]
+        port: u16,
+    },
 }
 
 #[tokio::main]
@@ -138,7 +144,12 @@ async fn main() -> Result<()> {
         Some(Commands::ListTokens) => {
             wallet::list_wallet_tokens(&config).await?;
         }
+        Some(Commands::WebServer { port }) => {
+            info!("Starting web server on port {}", port);
+            web::start_server(config, port).await?;
+        }
     }
 
     Ok(())
 }
+

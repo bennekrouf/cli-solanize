@@ -6,7 +6,11 @@ use solana_client::{
     // rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
     // rpc_filter::{Memcmp, RpcFilterType},
 };
-use solana_sdk::signature::{Keypair, Signer};
+use solana_sdk::{
+    pubkey::Pubkey,
+    signature::{Keypair, Signer},
+    // system_instruction,
+};
 use std::fs;
 use tracing::{error, info};
 
@@ -71,7 +75,12 @@ pub async fn get_wallet_tokens(config: &Config) -> Result<Vec<TokenBalance>> {
     // Process each token account
     for account in accounts {
         if let solana_account_decoder::UiAccountData::Json(token_account) = &account.account.data {
-            if let Some(info) = token_account.parsed.get("info").and_then(|v| v.as_object()) {
+            if let Some(info) = token_account
+                .parsed
+                .as_object()
+                .and_then(|obj| obj.get("info"))
+                .and_then(|v| v.as_object())
+            {
                 let mint = info
                     .get("mint")
                     .and_then(|v| v.as_str())
@@ -215,6 +224,115 @@ pub async fn get_balance(config: &Config) -> Result<f64> {
     Ok(sol_balance)
 }
 
+pub async fn get_balance_for_pubkey(config: &Config, pubkey: &Pubkey) -> Result<f64> {
+    let client = RpcClient::new(&config.solana.rpc_url);
+
+    let balance = client.get_balance(pubkey)?;
+    let sol_balance = balance as f64 / solana_sdk::native_token::LAMPORTS_PER_SOL as f64;
+
+    info!("Balance for {}: {} SOL", pubkey, sol_balance);
+    Ok(sol_balance)
+}
+
+pub async fn get_wallet_tokens_for_pubkey(
+    config: &Config,
+    pubkey: &Pubkey,
+) -> Result<Vec<TokenBalance>> {
+    let client = RpcClient::new(&config.solana.rpc_url);
+
+    info!("Scanning wallet for SPL tokens: {}", pubkey);
+
+    let mut token_balances = Vec::new();
+
+    // First, add native SOL balance
+    let sol_balance = get_balance_for_pubkey(config, pubkey).await?;
+    if sol_balance > 0.0 {
+        token_balances.push(TokenBalance {
+            mint: config.tokens.sol.clone(),
+            symbol: "SOL".to_string(),
+            name: "Solana".to_string(),
+            balance: sol_balance,
+            decimals: 9,
+            ui_amount: Some(sol_balance),
+        });
+    }
+
+    // Get all SPL token accounts owned by this wallet
+    let accounts = client.get_token_accounts_by_owner(
+        pubkey,
+        solana_client::rpc_request::TokenAccountsFilter::ProgramId(spl_token::id()),
+    )?;
+
+    info!("Found {} token accounts", accounts.len());
+
+    // Process each token account
+    for account in accounts {
+        if let solana_account_decoder::UiAccountData::Json(token_account) = &account.account.data {
+            if let Some(info) = token_account.parsed.get("info").and_then(|v| v.as_object()) {
+                let mint = info
+                    .get("mint")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let token_amount = info.get("tokenAmount").and_then(|v| v.as_object());
+
+                if let Some(amount_info) = token_amount {
+                    let ui_amount = amount_info
+                        .get("uiAmount")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
+
+                    let decimals = amount_info
+                        .get("decimals")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as u8;
+
+                    // Skip accounts with zero balance
+                    if ui_amount <= 0.0 {
+                        continue;
+                    }
+
+                    // Try to get token info from Jupiter
+                    let (symbol, name) = match token::get_token_info(config, &mint).await {
+                        Ok(Some(token_info)) => (token_info.symbol, token_info.name),
+                        _ => {
+                            // Fallback: use mint address as symbol
+                            let short_mint = if mint.len() > 8 {
+                                format!("{}..{}", &mint[..4], &mint[mint.len() - 4..])
+                            } else {
+                                mint.clone()
+                            };
+                            (
+                                short_mint.clone(),
+                                format!("Unknown Token ({})", short_mint),
+                            )
+                        }
+                    };
+
+                    token_balances.push(TokenBalance {
+                        mint: mint.clone(),
+                        symbol,
+                        name,
+                        balance: ui_amount,
+                        decimals,
+                        ui_amount: Some(ui_amount),
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by balance descending
+    token_balances.sort_by(|a, b| {
+        b.balance
+            .partial_cmp(&a.balance)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    Ok(token_balances)
+}
+
 pub async fn request_airdrop(config: &Config, amount: f64) -> Result<()> {
     let keypair = load_keypair(config).await?;
     let client = RpcClient::new(&config.solana.rpc_url);
@@ -246,3 +364,4 @@ pub async fn request_airdrop(config: &Config, amount: f64) -> Result<()> {
 
     Ok(())
 }
+
