@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rocket::{State, get, post, routes, serde::json::Json};
 use serde::{Deserialize, Serialize};
-use solana_sdk::{pubkey::Pubkey, signer::Signer};
+use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
 use tracing::{error, info};
 
@@ -453,11 +453,13 @@ pub async fn start_server(config: Config, port: u16) -> Result<()> {
             get_token_price,
             search_tokens,
             get_wallet_tokens,
+            get_transaction_history_web,  // Renamed
+            get_pending_transactions_web, // Renamed
         ],
     );
 
-    info!("🚀 Starting Solana API server on http://0.0.0.0:{}", port);
-    info!("📋 Available endpoints:");
+    info!("Starting Solana API server on http://0.0.0.0:{}", port);
+    info!("Available endpoints:");
     info!("  GET  /api/v1/health");
     info!("  POST /api/v1/balance");
     info!("  POST /api/v1/swap/prepare");
@@ -466,8 +468,138 @@ pub async fn start_server(config: Config, port: u16) -> Result<()> {
     info!("  POST /api/v1/price");
     info!("  POST /api/v1/tokens/search");
     info!("  POST /api/v1/wallet/tokens");
+    info!("  POST /api/v1/transactions/history");
+    info!("  POST /api/v1/transactions/pending");
 
     let _ = rocket.launch().await?;
 
     Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct TransactionHistoryRequest {
+    pub pubkey: String,
+    pub limit: Option<usize>,
+    pub before: Option<String>, // Signature to paginate before
+}
+
+#[derive(Deserialize)]
+pub struct PendingTransactionsRequest {
+    pub pubkey: String,
+}
+
+#[derive(Serialize)]
+pub struct TransactionHistoryResponse {
+    pub pubkey: String,
+    pub transactions: Vec<transaction::TransactionHistory>,
+    pub total_count: usize,
+    pub has_more: bool,
+    pub next_before: Option<String>, // For pagination
+}
+
+#[derive(Serialize)]
+pub struct PendingTransactionsResponse {
+    pub pubkey: String,
+    pub pending_transactions: Vec<transaction::TransactionHistory>,
+    pub count: usize,
+}
+
+#[post("/transactions/history", data = "<request>")]
+pub async fn get_transaction_history_web(
+    request: Json<TransactionHistoryRequest>,
+    config: &State<Config>,
+) -> Json<ApiResponse<TransactionHistoryResponse>> {
+    info!("Transaction history request for pubkey: {}", request.pubkey);
+
+    match parse_public_key(&request.pubkey) {
+        Ok(pubkey) => {
+            match transaction::fetch_transaction_history(
+                config,
+                &pubkey,
+                request.limit,
+                request.before.clone(),
+            )
+            .await
+            {
+                Ok(transactions) => {
+                    let total_count = transactions.len();
+                    let limit = request.limit.unwrap_or(50);
+                    let has_more = total_count >= limit;
+                    
+                    // Get next pagination token (last signature)
+                    let next_before = if has_more && !transactions.is_empty() {
+                        Some(transactions.last().unwrap().signature.clone())
+                    } else {
+                        None
+                    };
+
+                    Json(ApiResponse {
+                        success: true,
+                        data: Some(TransactionHistoryResponse {
+                            pubkey: request.pubkey.clone(),
+                            transactions,
+                            total_count,
+                            has_more,
+                            next_before,
+                        }),
+                        error: None,
+                    })
+                }
+                Err(e) => {
+                    error!("Failed to get transaction history: {}", e);
+                    Json(ApiResponse {
+                        success: false,
+                        data: None,
+                        error: Some(format!("Failed to get transaction history: {}", e)),
+                    })
+                }
+            }
+        }
+        Err(e) => Json(ApiResponse {
+            success: false,
+            data: None,
+            error: Some(format!("Invalid public key: {}", e)),
+        }),
+    }
+}
+
+#[post("/transactions/pending", data = "<request>")]
+pub async fn get_pending_transactions_web(
+    request: Json<PendingTransactionsRequest>,
+    config: &State<Config>,
+) -> Json<ApiResponse<PendingTransactionsResponse>> {
+    info!("Pending transactions request for pubkey: {}", request.pubkey);
+
+    match parse_public_key(&request.pubkey) {
+        Ok(pubkey) => {
+            match transaction::fetch_pending_transactions(config, &pubkey).await {
+                Ok(pending_transactions) => {
+                    let count = pending_transactions.len();
+
+                    Json(ApiResponse {
+                        success: true,
+                        data: Some(PendingTransactionsResponse {
+                            pubkey: request.pubkey.clone(),
+                            pending_transactions,
+                            count,
+                        }),
+                        error: None,
+                    })
+                }
+                Err(e) => {
+                    error!("Failed to get pending transactions: {}", e);
+                    Json(ApiResponse {
+                        success: false,
+                        data: None,
+                        error: Some(format!("Failed to get pending transactions: {}", e)),
+                    })
+                }
+            }
+        }
+        Err(e) => Json(ApiResponse {
+            success: false,
+            data: None,
+            error: Some(format!("Invalid public key: {}", e)),
+        }),
+    }
 }

@@ -35,7 +35,7 @@ pub struct Version {
     pub patch: u32,
 }
 
-pub async fn get_all_tokens(config: &Config) -> Result<Vec<TokenInfo>> {
+pub async fn get_all_tokens(_config: &Config) -> Result<Vec<TokenInfo>> {
     let client = Client::new();
     let url = "https://token.jup.ag/all";
 

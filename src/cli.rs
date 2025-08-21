@@ -2,6 +2,9 @@ use crate::{config::Config, jupiter, token, transaction, wallet};
 use anyhow::Result;
 use dialoguer::{Confirm, Input, Select, theme::ColorfulTheme};
 use tracing::error;
+use solana_sdk::signature::Signer;
+
+
 
 pub struct InteractiveMenu {
     config: Config,
@@ -27,6 +30,8 @@ impl InteractiveMenu {
                 "💲 Get Token Price",
                 "🔍 Search Tokens",
                 "🪙 List Wallet Tokens",
+                "📜 Transaction History",
+                "⏳ Pending Transactions",
                 "⚙️  Show Config",
                 "❌ Exit",
             ];
@@ -47,8 +52,10 @@ impl InteractiveMenu {
                 6 => self.handle_get_price().await?,
                 7 => self.handle_search_tokens().await?,
                 8 => self.handle_list_wallet_tokens().await?,
-                9 => self.handle_show_config()?,
-                10 => {
+                9 => self.handle_transaction_history().await?,   // Add this line
+                10 => self.handle_pending_transactions().await?, // Add this line
+                11 => self.handle_show_config()?,                // Update: was 9
+                12 => {                                          // Update: was 10
                     println!("👋 Goodbye!");
                     break;
                 }
@@ -375,5 +382,56 @@ impl InteractiveMenu {
 
         Ok(())
     }
+
+    async fn handle_transaction_history(&self) -> Result<()> {
+    let limit: usize = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Number of transactions to fetch")
+        .default(20)
+        .interact()?;
+
+    let keypair = wallet::load_keypair(&self.config).await?;
+    
+    match transaction::fetch_transaction_history(&self.config, &keypair.pubkey(), Some(limit), None).await {
+        Ok(history) => {
+            if history.is_empty() {
+                println!("No transactions found");
+            } else {
+                println!("\nTransaction History:");
+                for (i, tx) in history.iter().enumerate() {
+                    println!("{}. {} | {:?}", i + 1, &tx.signature[..8], tx.status);
+                    if let Some(amount) = tx.amount {
+                        println!("   Amount: {} {}", amount, tx.token_symbol.as_deref().unwrap_or("Unknown"));
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to get transaction history: {}", e);
+            println!("Error: {}", e);
+        }
+    }
+    Ok(())
 }
 
+async fn handle_pending_transactions(&self) -> Result<()> {
+    let keypair = wallet::load_keypair(&self.config).await?;
+    
+    match transaction::fetch_pending_transactions(&self.config, &keypair.pubkey()).await {
+        Ok(pending) => {
+            if pending.is_empty() {
+                println!("No pending transactions");
+            } else {
+                println!("\nPending Transactions:");
+                for (i, tx) in pending.iter().enumerate() {
+                    println!("{}. {} | {:?}", i + 1, &tx.signature[..8], tx.status);
+                }
+            }
+        }
+        Err(e) => {
+            error!("Failed to get pending transactions: {}", e);
+            println!("Error: {}", e);
+        }
+    }
+    Ok(())
+}
+}
