@@ -8,6 +8,7 @@ anyhow = "1.0.99"
 base64 = "0.22.1"
 bincode = "1.3"
 bs58 = "0.5.1"
+chrono = { version = "0.4.41", features = ["serde"] }
 clap = { version = "4.5.45", features = ["derive"] }
 dialoguer = "0.11.0"
 reqwest = { version = "0.12.23", features = ["json"] }
@@ -20,6 +21,7 @@ solana-account-decoder = "2.3.7"
 solana-client = "2.3.7"
 solana-program = "2.3.0"
 solana-sdk = "2.3.1"      # ← Available version
+solana-transaction-status = "2.3.7"
 # SPL tokens compatible with 2.3.x
 spl-associated-token-account = "6.0.0"
 spl-token = "6.0.0"
