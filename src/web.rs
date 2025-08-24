@@ -443,7 +443,7 @@ pub async fn start_server(config: Config, port: u16) -> Result<()> {
         .merge(("address", "0.0.0.0"));
 
     let rocket = rocket::custom(figment).manage(config).mount(
-        "/api/v1",
+        "/solana", // Changed from "/api/v1" to "/solana"
         routes![
             health,
             get_balance,
@@ -525,7 +525,7 @@ pub async fn get_transaction_history_web(
                     let total_count = transactions.len();
                     let limit = request.limit.unwrap_or(50);
                     let has_more = total_count >= limit;
-                    
+
                     // Get next pagination token (last signature)
                     let next_before = if has_more && !transactions.is_empty() {
                         Some(transactions.last().unwrap().signature.clone())
@@ -568,34 +568,35 @@ pub async fn get_pending_transactions_web(
     request: Json<PendingTransactionsRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PendingTransactionsResponse>> {
-    info!("Pending transactions request for pubkey: {}", request.pubkey);
+    info!(
+        "Pending transactions request for pubkey: {}",
+        request.pubkey
+    );
 
     match parse_public_key(&request.pubkey) {
-        Ok(pubkey) => {
-            match transaction::fetch_pending_transactions(config, &pubkey).await {
-                Ok(pending_transactions) => {
-                    let count = pending_transactions.len();
+        Ok(pubkey) => match transaction::fetch_pending_transactions(config, &pubkey).await {
+            Ok(pending_transactions) => {
+                let count = pending_transactions.len();
 
-                    Json(ApiResponse {
-                        success: true,
-                        data: Some(PendingTransactionsResponse {
-                            pubkey: request.pubkey.clone(),
-                            pending_transactions,
-                            count,
-                        }),
-                        error: None,
-                    })
-                }
-                Err(e) => {
-                    error!("Failed to get pending transactions: {}", e);
-                    Json(ApiResponse {
-                        success: false,
-                        data: None,
-                        error: Some(format!("Failed to get pending transactions: {}", e)),
-                    })
-                }
+                Json(ApiResponse {
+                    success: true,
+                    data: Some(PendingTransactionsResponse {
+                        pubkey: request.pubkey.clone(),
+                        pending_transactions,
+                        count,
+                    }),
+                    error: None,
+                })
             }
-        }
+            Err(e) => {
+                error!("Failed to get pending transactions: {}", e);
+                Json(ApiResponse {
+                    success: false,
+                    data: None,
+                    error: Some(format!("Failed to get pending transactions: {}", e)),
+                })
+            }
+        },
         Err(e) => Json(ApiResponse {
             success: false,
             data: None,
