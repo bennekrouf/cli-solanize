@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use tracing::info;
 use solana_sdk::signature::Signer;
 use std::str::FromStr;
+use tracing::info;
 
 use crate::web::get_transaction_history_web;
 mod cli;
@@ -77,11 +77,7 @@ enum Commands {
     /// List all tokens in wallet
     ListTokens,
     /// Start web server
-    WebServer {
-        #[arg(short, long, default_value = "8000")]
-        port: u16,
-    },
-
+    Server,
     /// Get transaction history for wallet
     History {
         #[arg(short, long, default_value = "50")]
@@ -163,64 +159,86 @@ async fn main() -> Result<()> {
         Some(Commands::ListTokens) => {
             wallet::list_wallet_tokens(&config).await?;
         }
-        Some(Commands::WebServer { port }) => {
+        Some(Commands::Server) => {
+            let port = std::env::var("ROCKET_PORT")
+                .map_err(|_| anyhow::anyhow!("ROCKET_PORT environment variable is required"))?
+                .parse::<u16>()
+                .map_err(|_| anyhow::anyhow!("ROCKET_PORT must be a valid port number"))?;
+
             info!("Starting web server on port {}", port);
             web::start_server(config, port).await?;
         }
-        Some(Commands::History { limit, before, pubkey }) => {
+        Some(Commands::History {
+            limit,
+            before,
+            pubkey,
+        }) => {
             let target_pubkey = if let Some(pk) = pubkey {
                 solana_sdk::pubkey::Pubkey::from_str(&pk)?
             } else {
                 let keypair = wallet::load_keypair(&config).await?;
                 keypair.pubkey()
             };
-            
-            let history = transaction::fetch_transaction_history(&config, &target_pubkey, Some(limit), before).await?;
-            
+
+            let history = transaction::fetch_transaction_history(
+                &config,
+                &target_pubkey,
+                Some(limit),
+                before,
+            )
+            .await?;
+
             if history.is_empty() {
                 println!("No transactions found");
             } else {
                 println!("Transaction History for {}", target_pubkey);
                 println!("{}", "=".repeat(80));
-                
+
                 for (i, tx) in history.iter().enumerate() {
-                    println!("{}. {} | {} | {:?}", 
-                        i + 1, 
-                        &tx.signature[..8], 
+                    println!(
+                        "{}. {} | {} | {:?}",
+                        i + 1,
+                        &tx.signature[..8],
                         format_tx_type(&tx.transaction_type),
                         tx.status
                     );
-                    
+
                     if let Some(amount) = tx.amount {
                         let symbol = tx.token_symbol.as_deref().unwrap_or("Unknown");
                         println!("   Amount: {} {}", amount, symbol);
                     }
-                    
+
                     if let Some(fee) = tx.fee {
                         println!("   Fee: {} SOL", fee);
                     }
-                    
+
                     if let Some(block_time) = tx.block_time {
                         let dt = chrono::DateTime::from_timestamp(block_time, 0)
                             .unwrap_or_else(|| chrono::Utc::now());
                         println!("   Time: {}", dt.format("%Y-%m-%d %H:%M:%S UTC"));
                     }
-                    
+
                     match tx.confirmation_status {
-                        transaction::ConfirmationStatus::Finalized => println!("   Status: Finalized"),
-                        transaction::ConfirmationStatus::Confirmed => println!("   Status: Confirmed"),
-                        transaction::ConfirmationStatus::Processed => println!("   Status: Processed"),
+                        transaction::ConfirmationStatus::Finalized => {
+                            println!("   Status: Finalized")
+                        }
+                        transaction::ConfirmationStatus::Confirmed => {
+                            println!("   Status: Confirmed")
+                        }
+                        transaction::ConfirmationStatus::Processed => {
+                            println!("   Status: Processed")
+                        }
                     }
-                    
+
                     if let Some(error) = &tx.error {
                         println!("   Error: {}", error);
                     }
-                    
+
                     println!();
                 }
             }
         }
-        
+
         Some(Commands::Pending { pubkey }) => {
             let target_pubkey = if let Some(pk) = pubkey {
                 solana_sdk::pubkey::Pubkey::from_str(&pk)?
@@ -228,28 +246,29 @@ async fn main() -> Result<()> {
                 let keypair = wallet::load_keypair(&config).await?;
                 keypair.pubkey()
             };
-            
+
             let pending = transaction::fetch_pending_transactions(&config, &target_pubkey).await?;
-            
+
             if pending.is_empty() {
                 println!("No pending transactions");
             } else {
                 println!("Pending Transactions for {}", target_pubkey);
                 println!("{}", "=".repeat(50));
-                
+
                 for (i, tx) in pending.iter().enumerate() {
-                    println!("{}. {} | {} | {:?}", 
-                        i + 1, 
+                    println!(
+                        "{}. {} | {} | {:?}",
+                        i + 1,
                         &tx.signature[..8],
-                        format_tx_type(&tx.transaction_type), 
+                        format_tx_type(&tx.transaction_type),
                         tx.status
                     );
-                    
+
                     if let Some(amount) = tx.amount {
                         let symbol = tx.token_symbol.as_deref().unwrap_or("Unknown");
                         println!("   Amount: {} {}", amount, symbol);
                     }
-                    
+
                     println!("   Status: Pending confirmation");
                     println!();
                 }
@@ -260,11 +279,10 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-
 fn format_tx_type(tx_type: &transaction::TransactionType) -> &'static str {
     match tx_type {
         transaction::TransactionType::Transfer => "SOL Transfer",
-        transaction::TransactionType::TokenTransfer => "Token Transfer", 
+        transaction::TransactionType::TokenTransfer => "Token Transfer",
         transaction::TransactionType::Swap => "Token Swap",
         transaction::TransactionType::Unknown => "Unknown",
     }
