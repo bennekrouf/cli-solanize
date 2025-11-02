@@ -14,8 +14,8 @@ impl InteractiveMenu {
     }
 
     pub async fn run(&self) -> Result<()> {
-        println!("\n🚀 Solana CLI Client - Interactive Mode");
-        println!("=====================================\n");
+        app_log!(info, "\n🚀 Solana CLI Client - Interactive Mode");
+        app_log!(info, "=====================================\n");
 
         loop {
             let options = vec![
@@ -55,13 +55,13 @@ impl InteractiveMenu {
                 11 => self.handle_show_config()?,              // Update: was 9
                 12 => {
                     // Update: was 10
-                    println!("👋 Goodbye!");
+                    app_log!(info, "👋 Goodbye!");
                     break;
                 }
                 _ => unreachable!(),
             }
 
-            println!("\n{}\n", "=".repeat(50));
+            app_log!(info, "\n{}\n", "=".repeat(50));
         }
 
         Ok(())
@@ -71,8 +71,8 @@ impl InteractiveMenu {
         match wallet::list_wallet_tokens(&self.config).await {
             Ok(_) => {}
             Err(e) => {
-                error!("Failed to list wallet tokens: {}", e);
-                println!("❌ Error: {}", e);
+                app_log!(error, "Failed to list wallet tokens: {}", e);
+                app_log!(info, "❌ Error: {}", e);
             }
         }
 
@@ -88,7 +88,7 @@ impl InteractiveMenu {
         if confirm {
             wallet::generate_wallet(&self.config).await?;
         } else {
-            println!("Operation cancelled.");
+            app_log!(info, "Operation cancelled.");
         }
 
         Ok(())
@@ -97,11 +97,11 @@ impl InteractiveMenu {
     async fn handle_check_balance(&self) -> Result<()> {
         match wallet::get_balance(&self.config).await {
             Ok(balance) => {
-                println!("💰 Current Balance: {} SOL", balance);
+                app_log!(info, "💰 Current Balance: {} SOL", balance);
             }
             Err(e) => {
-                error!("Failed to get balance: {}", e);
-                println!("❌ Error: {}", e);
+                app_log!(error, "Failed to get balance: {}", e);
+                app_log!(info, "❌ Error: {}", e);
             }
         }
 
@@ -115,15 +115,15 @@ impl InteractiveMenu {
             .interact()?;
 
         if amount <= 0.0 {
-            println!("❌ Amount must be positive");
+            app_log!(info, "❌ Amount must be positive");
             return Ok(());
         }
 
         match wallet::request_airdrop(&self.config, amount).await {
-            Ok(_) => println!("✅ Airdrop completed successfully!"),
+            Ok(_) => app_log!(info, "✅ Airdrop completed successfully!"),
             Err(e) => {
-                error!("Airdrop failed: {}", e);
-                println!("❌ Error: {}", e);
+                app_log!(error, "Airdrop failed: {}", e);
+                app_log!(info, "❌ Error: {}", e);
             }
         }
 
@@ -140,19 +140,19 @@ impl InteractiveMenu {
             .interact()?;
 
         if amount <= 0.0 {
-            println!("❌ Amount must be positive");
+            app_log!(info, "❌ Amount must be positive");
             return Ok(());
         }
 
         match transaction::create_transaction(&self.config, &to_address, amount).await {
             Ok(tx_data) => {
-                println!("✅ Transaction created successfully!");
-                println!("📋 Copy this transaction data to send later:");
-                println!("{}", tx_data);
+                app_log!(info, "✅ Transaction created successfully!");
+                app_log!(info, "📋 Copy this transaction data to send later:");
+                app_log!(info, "{}", tx_data);
             }
             Err(e) => {
-                error!("Transaction creation failed: {}", e);
-                println!("❌ Error: {}", e);
+                app_log!(error, "Transaction creation failed: {}", e);
+                app_log!(info, "❌ Error: {}", e);
             }
         }
 
@@ -170,15 +170,15 @@ impl InteractiveMenu {
             .interact()?;
 
         if !confirm {
-            println!("Transaction cancelled.");
+            app_log!(info, "Transaction cancelled.");
             return Ok(());
         }
 
         match transaction::send_transaction(&self.config, &tx_data).await {
-            Ok(_) => println!("✅ Transaction sent successfully!"),
+            Ok(_) => app_log!(info, "✅ Transaction sent successfully!"),
             Err(e) => {
-                error!("Transaction send failed: {}", e);
-                println!("❌ Error: {}", e);
+                app_log!(error, "Transaction send failed: {}", e);
+                app_log!(info, "❌ Error: {}", e);
             }
         }
 
@@ -186,19 +186,19 @@ impl InteractiveMenu {
     }
 
     async fn handle_swap_tokens(&self) -> Result<()> {
-        println!("🔄 Token Swap");
+        app_log!(info, "🔄 Token Swap");
 
         // First, show available tokens in wallet
         let wallet_tokens = wallet::get_wallet_tokens(&self.config).await?;
 
         if wallet_tokens.is_empty() {
-            println!("❌ No tokens found in wallet. Get some tokens first!");
+            app_log!(info, "❌ No tokens found in wallet. Get some tokens first!");
             return Ok(());
         }
 
-        println!("\n💼 Available tokens in your wallet:");
+        app_log!(info, "\n💼 Available tokens in your wallet:");
         for (i, token) in wallet_tokens.iter().enumerate().take(10) {
-            println!(
+            app_log!(info, 
                 "{}. {} - {} tokens",
                 i + 1,
                 token.symbol,
@@ -219,7 +219,7 @@ impl InteractiveMenu {
             .interact()?;
 
         if amount <= 0.0 {
-            println!("❌ Amount must be positive");
+            app_log!(info, "❌ Amount must be positive");
             return Ok(());
         }
 
@@ -227,14 +227,14 @@ impl InteractiveMenu {
         match jupiter::get_token_price(&self.config, &from_token).await {
             Ok(price) => {
                 let estimated_value = amount * price;
-                println!(
+                app_log!(info, 
                     "💲 Current {} price: ${:.6}",
                     from_token.to_uppercase(),
                     price
                 );
-                println!("💰 Estimated value: ${:.2}", estimated_value);
+                app_log!(info, "💰 Estimated value: ${:.2}", estimated_value);
             }
-            Err(_) => println!("⚠️  Could not fetch current price"),
+            Err(_) => app_log!(info, "⚠️  Could not fetch current price"),
         }
 
         let confirm = Confirm::with_theme(&ColorfulTheme::default())
@@ -243,15 +243,15 @@ impl InteractiveMenu {
             .interact()?;
 
         if !confirm {
-            println!("Swap cancelled.");
+            app_log!(info, "Swap cancelled.");
             return Ok(());
         }
 
         match jupiter::swap_tokens(&self.config, &from_token, &to_token, amount).await {
-            Ok(_) => println!("✅ Swap completed successfully!"),
+            Ok(_) => app_log!(info, "✅ Swap completed successfully!"),
             Err(e) => {
-                error!("Swap failed: {}", e);
-                println!("❌ Error: {}", e);
+                app_log!(error, "Swap failed: {}", e);
+                app_log!(info, "❌ Error: {}", e);
             }
         }
 
@@ -266,18 +266,18 @@ impl InteractiveMenu {
 
         match jupiter::get_token_price(&self.config, &token).await {
             Ok(price) => {
-                println!("💲 {} price: ${:.6}", token.to_uppercase(), price);
+                app_log!(info, "💲 {} price: ${:.6}", token.to_uppercase(), price);
 
                 // Also show token info if available
                 if let Ok(Some(token_info)) = token::get_token_info(&self.config, &token).await {
-                    println!("📝 Token: {} ({})", token_info.name, token_info.symbol);
-                    println!("📍 Address: {}", token_info.address);
-                    println!("🔢 Decimals: {}", token_info.decimals);
+                    app_log!(info, "📝 Token: {} ({})", token_info.name, token_info.symbol);
+                    app_log!(info, "📍 Address: {}", token_info.address);
+                    app_log!(info, "🔢 Decimals: {}", token_info.decimals);
                 }
             }
             Err(e) => {
-                error!("Failed to get price: {}", e);
-                println!("❌ Error: {}", e);
+                app_log!(error, "Failed to get price: {}", e);
+                app_log!(info, "❌ Error: {}", e);
             }
         }
 
@@ -290,18 +290,18 @@ impl InteractiveMenu {
             .interact()?;
 
         if query.trim().is_empty() {
-            println!("❌ Search query cannot be empty");
+            app_log!(info, "❌ Search query cannot be empty");
             return Ok(());
         }
 
         match token::search_tokens(&self.config, &query).await {
             Ok(tokens) => {
                 if tokens.is_empty() {
-                    println!("🔍 No tokens found for '{}'", query);
+                    app_log!(info, "🔍 No tokens found for '{}'", query);
                 } else {
-                    println!("\n📋 Search Results:");
+                    app_log!(info, "\n📋 Search Results:");
                     for (i, token) in tokens.iter().enumerate() {
-                        println!(
+                        app_log!(info, 
                             "{}. {} ({}) - {}",
                             i + 1,
                             token.symbol,
@@ -313,7 +313,7 @@ impl InteractiveMenu {
                         if let Ok(price) =
                             jupiter::get_token_price(&self.config, &token.symbol).await
                         {
-                            println!("   💲 Price: ${:.6}", price);
+                            app_log!(info, "   💲 Price: ${:.6}", price);
                         }
                     }
 
@@ -337,8 +337,8 @@ impl InteractiveMenu {
                 }
             }
             Err(e) => {
-                error!("Token search failed: {}", e);
-                println!("❌ Error: {}", e);
+                app_log!(error, "Token search failed: {}", e);
+                app_log!(info, "❌ Error: {}", e);
             }
         }
 
@@ -346,38 +346,38 @@ impl InteractiveMenu {
     }
 
     async fn show_token_details(&self, token: &token::TokenInfo) -> Result<()> {
-        println!("\n🪙 Token Details:");
-        println!("━━━━━━━━━━━━━━━━━━━━━━");
-        println!("📛 Symbol: {}", token.symbol);
-        println!("📝 Name: {}", token.name);
-        println!("📍 Address: {}", token.address);
-        println!("🔢 Decimals: {}", token.decimals);
+        app_log!(info, "\n🪙 Token Details:");
+        app_log!(info, "━━━━━━━━━━━━━━━━━━━━━━");
+        app_log!(info, "📛 Symbol: {}", token.symbol);
+        app_log!(info, "📝 Name: {}", token.name);
+        app_log!(info, "📍 Address: {}", token.address);
+        app_log!(info, "🔢 Decimals: {}", token.decimals);
 
         if !token.tags.is_empty() {
-            println!("🏷️  Tags: {}", token.tags.join(", "));
+            app_log!(info, "🏷️  Tags: {}", token.tags.join(", "));
         }
 
         // Get current price
         match jupiter::get_token_price(&self.config, &token.symbol).await {
-            Ok(price) => println!("💲 Current Price: ${:.6}", price),
-            Err(_) => println!("💲 Price: Not available"),
+            Ok(price) => app_log!(info, "💲 Current Price: ${:.6}", price),
+            Err(_) => app_log!(info, "💲 Price: Not available"),
         }
 
         if let Some(logo) = &token.logo_uri {
-            println!("🖼️  Logo: {}", logo);
+            app_log!(info, "🖼️  Logo: {}", logo);
         }
 
         Ok(())
     }
 
     fn handle_show_config(&self) -> Result<()> {
-        println!("⚙️  Current Configuration:");
-        println!("Network: {}", self.config.solana.network);
-        println!("RPC URL: {}", self.config.solana.rpc_url);
-        println!("Wallet Path: {}", self.config.wallet.keypair_path);
-        println!("Log Level: {}", self.config.logging.level);
-        println!("Jupiter API: {}", self.config.jupiter.api_url);
-        println!("Slippage: {}bps", self.config.jupiter.slippage_bps);
+        app_log!(info, "⚙️  Current Configuration:");
+        app_log!(info, "Network: {}", self.config.solana.network);
+        app_log!(info, "RPC URL: {}", self.config.solana.rpc_url);
+        app_log!(info, "Wallet Path: {}", self.config.wallet.keypair_path);
+        app_log!(info, "Log Level: {}", self.config.logging.level);
+        app_log!(info, "Jupiter API: {}", self.config.jupiter.api_url);
+        app_log!(info, "Slippage: {}bps", self.config.jupiter.slippage_bps);
 
         Ok(())
     }
@@ -400,13 +400,13 @@ impl InteractiveMenu {
         {
             Ok(history) => {
                 if history.is_empty() {
-                    println!("No transactions found");
+                    app_log!(info, "No transactions found");
                 } else {
-                    println!("\nTransaction History:");
+                    app_log!(info, "\nTransaction History:");
                     for (i, tx) in history.iter().enumerate() {
-                        println!("{}. {} | {:?}", i + 1, &tx.signature[..8], tx.status);
+                        app_log!(info, "{}. {} | {:?}", i + 1, &tx.signature[..8], tx.status);
                         if let Some(amount) = tx.amount {
-                            println!(
+                            app_log!(info, 
                                 "   Amount: {} {}",
                                 amount,
                                 tx.token_symbol.as_deref().unwrap_or("Unknown")
@@ -416,8 +416,8 @@ impl InteractiveMenu {
                 }
             }
             Err(e) => {
-                error!("Failed to get transaction history: {}", e);
-                println!("Error: {}", e);
+                app_log!(error, "Failed to get transaction history: {}", e);
+                app_log!(info, "Error: {}", e);
             }
         }
         Ok(())
@@ -429,17 +429,17 @@ impl InteractiveMenu {
         match transaction::fetch_pending_transactions(&self.config, &keypair.pubkey()).await {
             Ok(pending) => {
                 if pending.is_empty() {
-                    println!("No pending transactions");
+                    app_log!(info, "No pending transactions");
                 } else {
-                    println!("\nPending Transactions:");
+                    app_log!(info, "\nPending Transactions:");
                     for (i, tx) in pending.iter().enumerate() {
-                        println!("{}. {} | {:?}", i + 1, &tx.signature[..8], tx.status);
+                        app_log!(info, "{}. {} | {:?}", i + 1, &tx.signature[..8], tx.status);
                     }
                 }
             }
             Err(e) => {
-                error!("Failed to get pending transactions: {}", e);
-                println!("Error: {}", e);
+                app_log!(error, "Failed to get pending transactions: {}", e);
+                app_log!(info, "Error: {}", e);
             }
         }
         Ok(())

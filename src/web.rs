@@ -149,7 +149,7 @@ pub async fn get_balance(
     request: Json<BalanceRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<BalanceResponse>> {
-    info!("Balance request for pubkey: {}", request.pubkey);
+    app_log!(info, "Balance request for pubkey: {}", request.pubkey);
 
     match parse_public_key(&request.pubkey) {
         Ok(pubkey) => match wallet::get_balance_for_pubkey(config, &pubkey).await {
@@ -163,7 +163,7 @@ pub async fn get_balance(
                 error: None,
             }),
             Err(e) => {
-                error!("Failed to get balance: {}", e);
+                app_log!(error, "Failed to get balance: {}", e);
                 Json(ApiResponse {
                     success: false,
                     data: None,
@@ -184,7 +184,7 @@ pub async fn prepare_swap(
     request: Json<PrepareSwapRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PrepareSwapResponse>> {
-    info!(
+    app_log!(info, 
         "Prepare swap request: {} {} -> {} for {}",
         request.amount, request.from_token, request.to_token, request.payer_pubkey
     );
@@ -211,7 +211,7 @@ pub async fn prepare_swap(
                     error: None,
                 }),
                 Err(e) => {
-                    error!("Swap preparation failed: {}", e);
+                    app_log!(error, "Swap preparation failed: {}", e);
                     Json(ApiResponse {
                         success: false,
                         data: None,
@@ -233,7 +233,7 @@ pub async fn prepare_transaction(
     request: Json<PrepareTransactionRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PrepareTransactionResponse>> {
-    info!(
+    app_log!(info, 
         "Prepare transaction request: {} SOL from {} to {}",
         request.amount, request.payer_pubkey, request.to_address
     );
@@ -261,7 +261,7 @@ pub async fn prepare_transaction(
                     error: None,
                 }),
                 Err(e) => {
-                    error!("Transaction preparation failed: {}", e);
+                    app_log!(error, "Transaction preparation failed: {}", e);
                     Json(ApiResponse {
                         success: false,
                         data: None,
@@ -283,7 +283,7 @@ pub async fn submit_signed_transaction(
     request: Json<SubmitSignedRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<SubmitResponse>> {
-    info!("Submit signed transaction request");
+    app_log!(info, "Submit signed transaction request");
 
     match transaction::submit_signed_transaction(config, &request.signed_transaction).await {
         Ok(signature) => Json(ApiResponse {
@@ -295,7 +295,7 @@ pub async fn submit_signed_transaction(
             error: None,
         }),
         Err(e) => {
-            error!("Transaction submission failed: {}", e);
+            app_log!(error, "Transaction submission failed: {}", e);
             Json(ApiResponse {
                 success: false,
                 data: None,
@@ -310,7 +310,7 @@ pub async fn get_token_price(
     request: Json<PriceRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PriceResponse>> {
-    info!("Price request for token: {}", request.token);
+    app_log!(info, "Price request for token: {}", request.token);
 
     match jupiter::get_token_price(config, &request.token).await {
         Ok(price) => Json(ApiResponse {
@@ -323,7 +323,7 @@ pub async fn get_token_price(
             error: None,
         }),
         Err(e) => {
-            error!("Price fetch failed: {}", e);
+            app_log!(error, "Price fetch failed: {}", e);
             Json(ApiResponse {
                 success: false,
                 data: None,
@@ -338,7 +338,7 @@ pub async fn search_tokens(
     request: Json<SearchRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<TokenSearchResponse>> {
-    info!("Token search request: {}", request.query);
+    app_log!(info, "Token search request: {}", request.query);
 
     match token::search_tokens(config, &request.query).await {
         Ok(tokens) => {
@@ -364,7 +364,7 @@ pub async fn search_tokens(
             })
         }
         Err(e) => {
-            error!("Token search failed: {}", e);
+            app_log!(error, "Token search failed: {}", e);
             Json(ApiResponse {
                 success: false,
                 data: None,
@@ -379,7 +379,7 @@ pub async fn get_wallet_tokens(
     request: Json<WalletTokensRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<WalletTokensResponse>> {
-    info!("Wallet tokens request for pubkey: {}", request.pubkey);
+    app_log!(info, "Wallet tokens request for pubkey: {}", request.pubkey);
 
     match parse_public_key(&request.pubkey) {
         Ok(pubkey) => {
@@ -420,7 +420,7 @@ pub async fn get_wallet_tokens(
                     })
                 }
                 Err(e) => {
-                    error!("Failed to get wallet tokens: {}", e);
+                    app_log!(error, "Failed to get wallet tokens: {}", e);
                     Json(ApiResponse {
                         success: false,
                         data: None,
@@ -458,18 +458,18 @@ pub async fn start_server(config: Config, port: u16) -> Result<()> {
         ],
     );
 
-    info!("Starting Solana API server on http://0.0.0.0:{}", port);
-    info!("Available endpoints:");
-    info!("  GET  /api/v1/health");
-    info!("  POST /api/v1/balance");
-    info!("  POST /api/v1/swap/prepare");
-    info!("  POST /api/v1/transaction/prepare");
-    info!("  POST /api/v1/transaction/submit");
-    info!("  POST /api/v1/price");
-    info!("  POST /api/v1/tokens/search");
-    info!("  POST /api/v1/wallet/tokens");
-    info!("  POST /api/v1/transactions/history");
-    info!("  POST /api/v1/transactions/pending");
+    app_log!(info, "Starting Solana API server on http://0.0.0.0:{}", port);
+    app_log!(info, "Available endpoints:");
+    app_log!(info, "  GET  /api/v1/health");
+    app_log!(info, "  POST /api/v1/balance");
+    app_log!(info, "  POST /api/v1/swap/prepare");
+    app_log!(info, "  POST /api/v1/transaction/prepare");
+    app_log!(info, "  POST /api/v1/transaction/submit");
+    app_log!(info, "  POST /api/v1/price");
+    app_log!(info, "  POST /api/v1/tokens/search");
+    app_log!(info, "  POST /api/v1/wallet/tokens");
+    app_log!(info, "  POST /api/v1/transactions/history");
+    app_log!(info, "  POST /api/v1/transactions/pending");
 
     let _ = rocket.launch().await?;
 
@@ -509,7 +509,7 @@ pub async fn get_transaction_history_web(
     request: Json<TransactionHistoryRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<TransactionHistoryResponse>> {
-    info!("Transaction history request for pubkey: {}", request.pubkey);
+    app_log!(info, "Transaction history request for pubkey: {}", request.pubkey);
 
     match parse_public_key(&request.pubkey) {
         Ok(pubkey) => {
@@ -546,7 +546,7 @@ pub async fn get_transaction_history_web(
                     })
                 }
                 Err(e) => {
-                    error!("Failed to get transaction history: {}", e);
+                    app_log!(error, "Failed to get transaction history: {}", e);
                     Json(ApiResponse {
                         success: false,
                         data: None,
@@ -568,7 +568,7 @@ pub async fn get_pending_transactions_web(
     request: Json<PendingTransactionsRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PendingTransactionsResponse>> {
-    info!(
+    app_log!(info, 
         "Pending transactions request for pubkey: {}",
         request.pubkey
     );
@@ -589,7 +589,7 @@ pub async fn get_pending_transactions_web(
                 })
             }
             Err(e) => {
-                error!("Failed to get pending transactions: {}", e);
+                app_log!(error, "Failed to get pending transactions: {}", e);
                 Json(ApiResponse {
                     success: false,
                     data: None,

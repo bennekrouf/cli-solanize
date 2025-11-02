@@ -51,10 +51,10 @@ pub struct TokensConfig {
 
 impl Config {
     pub fn load(path: &str) -> Result<Self> {
-        info!("Loading config from: {}", path);
+        app_log!(info, "Loading config from: {}", path);
         let content = fs::read_to_string(path)?;
         let config: Config = serde_yaml::from_str(&content)?;
-        info!("Config loaded successfully");
+        app_log!(info, "Config loaded successfully");
         Ok(config)
     }
 }
