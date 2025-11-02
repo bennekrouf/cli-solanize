@@ -39,7 +39,7 @@ pub async fn get_all_tokens(_config: &Config) -> Result<Vec<TokenInfo>> {
     let client = Client::new();
     let url = "https://token.jup.ag/all";
 
-    info!("Fetching all tokens from Jupiter");
+    app_log!(info, "Fetching all tokens from Jupiter");
 
     let response = client.get(url).send().await?;
 
@@ -58,7 +58,7 @@ pub async fn search_tokens(config: &Config, query: &str) -> Result<Vec<TokenInfo
     let all_tokens = get_all_tokens(config).await?;
     let query_lower = query.to_lowercase();
 
-    info!("Searching tokens for: {}", query);
+    app_log!(info, "Searching tokens for: {}", query);
 
     let mut matches: Vec<TokenInfo> = all_tokens
         .into_iter()
@@ -99,7 +99,7 @@ pub async fn search_tokens(config: &Config, query: &str) -> Result<Vec<TokenInfo
     // Limit results to top 20
     matches.truncate(20);
 
-    println!("🔍 Found {} tokens matching '{}':", matches.len(), query);
+    app_log!(info, "🔍 Found {} tokens matching '{}':", matches.len(), query);
 
     Ok(matches)
 }

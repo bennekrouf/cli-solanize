@@ -162,7 +162,7 @@ pub async fn prepare_swap_transaction(
     };
     let amount_units = (amount * 10_f64.powi(decimals)) as u64;
 
-    info!(
+    app_log!(info, 
         "Preparing swap: {} {} for {} (payer: {})",
         amount,
         from_symbol.to_uppercase(),
@@ -181,7 +181,7 @@ pub async fn prepare_swap_transaction(
         });
     let price_impact = quote.price_impact_pct.parse::<f64>()?;
 
-    info!(
+    app_log!(info, 
         "Quote: {} {} -> {:.6} {}, price impact: {:.4}%",
         amount,
         from_symbol.to_uppercase(),
@@ -240,7 +240,7 @@ pub async fn get_quote(
     let client = Client::new();
     let url = format!("{}/quote", config.jupiter.api_url);
 
-    info!(
+    app_log!(info, 
         "Getting quote from Jupiter: {} -> {}",
         input_mint, output_mint
     );
@@ -290,7 +290,7 @@ pub async fn get_swap_transaction(
         destination_token_account: None,
     };
 
-    info!("Getting swap transaction from Jupiter");
+    app_log!(info, "Getting swap transaction from Jupiter");
 
     let response = client.post(&url).json(&request).send().await?;
 
@@ -334,7 +334,7 @@ pub async fn swap_tokens(
     }; // USDC has 6 decimals
     let amount_units = (amount * 10_f64.powi(decimals)) as u64;
 
-    println!(
+    app_log!(info, 
         "🔄 Swapping {} {} for {}...",
         amount,
         from_symbol.to_uppercase(),
@@ -352,14 +352,14 @@ pub async fn swap_tokens(
         });
     let price_impact = quote.price_impact_pct.parse::<f64>()?;
 
-    println!("📊 Quote received:");
-    println!(
+    app_log!(info, "📊 Quote received:");
+    app_log!(info, 
         "   Expected output: {:.6} {}",
         out_amount_f64,
         to_symbol.to_uppercase()
     );
-    println!("   Price impact: {:.4}%", price_impact);
-    println!("   Route: {} steps", quote.route_plan.len());
+    app_log!(info, "   Price impact: {:.4}%", price_impact);
+    app_log!(info, "   Route: {} steps", quote.route_plan.len());
 
     // Get swap transaction
     let swap_response = get_swap_transaction(config, quote, &keypair.pubkey()).await?;
@@ -376,9 +376,9 @@ pub async fn swap_tokens(
 
     match client.send_and_confirm_transaction(&transaction) {
         Ok(signature) => {
-            println!("✅ Swap completed successfully!");
-            println!("🔗 Signature: {}", signature);
-            println!(
+            app_log!(info, "✅ Swap completed successfully!");
+            app_log!(info, "🔗 Signature: {}", signature);
+            app_log!(info, 
                 "💰 Swapped {} {} for ~{:.6} {}",
                 amount,
                 from_symbol.to_uppercase(),
@@ -387,7 +387,7 @@ pub async fn swap_tokens(
             );
         }
         Err(e) => {
-            error!("Swap failed: {}", e);
+            app_log!(error, "Swap failed: {}", e);
             return Err(SolanaClientError::TransactionFailed {
                 reason: format!("Swap failed: {}", e),
             }
@@ -422,7 +422,7 @@ pub async fn swap_tokens_with_keypair(
     }; // USDC has 6 decimals
     let amount_units = (amount * 10_f64.powi(decimals)) as u64;
 
-    info!(
+    app_log!(info, 
         "Swapping {} {} for {} with keypair {}",
         amount,
         from_symbol.to_uppercase(),
@@ -441,7 +441,7 @@ pub async fn swap_tokens_with_keypair(
         });
     let price_impact = quote.price_impact_pct.parse::<f64>()?;
 
-    info!(
+    app_log!(info, 
         "Quote: {} {} -> {:.6} {}, price impact: {:.4}%",
         amount,
         from_symbol.to_uppercase(),
@@ -465,11 +465,11 @@ pub async fn swap_tokens_with_keypair(
 
     match client.send_and_confirm_transaction(&signed_tx) {
         Ok(signature) => {
-            info!("Swap completed: {}", signature);
+            app_log!(info, "Swap completed: {}", signature);
             Ok(signature.to_string())
         }
         Err(e) => {
-            error!("Swap failed: {}", e);
+            app_log!(error, "Swap failed: {}", e);
             Err(crate::error::SolanaClientError::TransactionFailed {
                 reason: format!("Swap failed: {}", e),
             }
@@ -486,7 +486,7 @@ pub async fn get_token_price(config: &Config, symbol: &str) -> Result<f64> {
 
     let url = format!("{}?ids={}", config.jupiter.price_api_url, mint);
 
-    info!("Getting price for token: {}", symbol);
+    app_log!(info, "Getting price for token: {}", symbol);
 
     let response = client.get(&url).send().await?;
 

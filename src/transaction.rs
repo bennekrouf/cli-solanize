@@ -76,7 +76,7 @@ pub async fn create_transaction(config: &Config, to_address: &str, amount: f64) 
 
     let lamports = (amount * solana_sdk::native_token::LAMPORTS_PER_SOL as f64) as u64;
 
-    info!("Creating transaction: {} SOL to {}", amount, to_address);
+    app_log!(info, "Creating transaction: {} SOL to {}", amount, to_address);
 
     // Create transfer instruction
     let instruction = system_instruction::transfer(&from_keypair.pubkey(), &to_pubkey, lamports);
@@ -92,10 +92,10 @@ pub async fn create_transaction(config: &Config, to_address: &str, amount: f64) 
     let serialized_tx = bincode::serialize(&transaction)?;
     let tx_string = bs58::encode(serialized_tx).into_string();
 
-    println!("✅ Transaction created successfully!");
-    println!("📦 Transaction data: {}", tx_string);
-    println!("💸 Amount: {} SOL", amount);
-    println!("📍 To: {}", to_address);
+    app_log!(info, "✅ Transaction created successfully!");
+    app_log!(info, "📦 Transaction data: {}", tx_string);
+    app_log!(info, "💸 Amount: {} SOL", amount);
+    app_log!(info, "📍 To: {}", to_address);
 
     Ok(tx_string)
 }
@@ -126,7 +126,7 @@ pub async fn prepare_sol_transfer(
 
     let lamports = (amount * solana_sdk::native_token::LAMPORTS_PER_SOL as f64) as u64;
 
-    info!(
+    app_log!(info, 
         "Preparing SOL transfer: {} SOL from {} to {}",
         amount, payer_pubkey, to_address
     );
@@ -151,7 +151,7 @@ pub async fn prepare_sol_transfer(
     // Required signers (just the payer)
     let required_signers = vec![payer_pubkey.to_string()];
 
-    info!("Unsigned transaction prepared");
+    app_log!(info, "Unsigned transaction prepared");
 
     Ok((
         unsigned_tx_b64,
@@ -166,7 +166,7 @@ pub async fn submit_signed_transaction(
 ) -> Result<String> {
     let client = RpcClient::new(&config.solana.rpc_url);
 
-    info!("Submitting signed transaction");
+    app_log!(info, "Submitting signed transaction");
 
     // Decode the signed transaction
     let tx_bytes = base64::decode(signed_transaction_b64)?;
@@ -185,14 +185,14 @@ pub async fn submit_signed_transaction(
         .into());
     };
 
-    info!("Transaction submitted: {}", signature);
+    app_log!(info, "Transaction submitted: {}", signature);
     Ok(signature.to_string())
 }
 
 pub async fn send_transaction(config: &Config, tx_data: &str) -> Result<()> {
     let client = RpcClient::new(&config.solana.rpc_url);
 
-    info!("Sending transaction");
+    app_log!(info, "Sending transaction");
 
     // Deserialize transaction
     let tx_bytes = bs58::decode(tx_data).into_vec()?;
@@ -201,15 +201,15 @@ pub async fn send_transaction(config: &Config, tx_data: &str) -> Result<()> {
     // Send transaction
     match client.send_and_confirm_transaction(&transaction) {
         Ok(signature) => {
-            println!("✅ Transaction sent successfully!");
-            println!("🔗 Signature: {}", signature);
+            app_log!(info, "✅ Transaction sent successfully!");
+            app_log!(info, "🔗 Signature: {}", signature);
 
             // Update balance
             let new_balance = crate::wallet::get_balance(config).await?;
-            println!("💰 New balance: {} SOL", new_balance);
+            app_log!(info, "💰 New balance: {} SOL", new_balance);
         }
         Err(e) => {
-            error!("Transaction failed: {}", e);
+            app_log!(error, "Transaction failed: {}", e);
             return Err(SolanaClientError::TransactionFailed {
                 reason: format!("Send failed: {}", e),
             }
@@ -252,7 +252,7 @@ pub async fn create_transaction_with_keypair(
 
     let lamports = (amount * solana_sdk::native_token::LAMPORTS_PER_SOL as f64) as u64;
 
-    info!(
+    app_log!(info, 
         "Creating transaction: {} SOL from {} to {}",
         amount,
         from_keypair.pubkey(),
@@ -273,7 +273,7 @@ pub async fn create_transaction_with_keypair(
     let serialized_tx = bincode::serialize(&transaction)?;
     let tx_string = bs58::encode(serialized_tx).into_string();
 
-    info!("Transaction created: {}", tx_string);
+    app_log!(info, "Transaction created: {}", tx_string);
 
     Ok(tx_string)
 }
@@ -289,7 +289,7 @@ pub async fn fetch_transaction_history(
     let client = RpcClient::new(&config.solana.rpc_url);
     let limit = limit.unwrap_or(50).min(1000); // Cap at 1000
 
-    info!("Fetching transaction history for {}, limit: {}", pubkey, limit);
+    app_log!(info, "Fetching transaction history for {}, limit: {}", pubkey, limit);
 
     // Get transaction signatures
     // let mut config_params = solana_client::rpc_config::RpcTransactionLogsConfigWrapper {
@@ -351,7 +351,7 @@ pub async fn fetch_transaction_history(
         });
     }
 
-    info!("Found {} transactions", transactions.len());
+    app_log!(info, "Found {} transactions", transactions.len());
     Ok(transactions)
 }
 
@@ -362,7 +362,7 @@ pub async fn fetch_pending_transactions(
 ) -> Result<Vec<TransactionHistory>> {
     let client = RpcClient::new(&config.solana.rpc_url);
 
-    info!("Fetching pending transactions for {}", pubkey);
+    app_log!(info, "Fetching pending transactions for {}", pubkey);
 
     // Get recent signatures with processed commitment to catch pending ones
     let signatures = client.get_signatures_for_address_with_config(
@@ -409,7 +409,7 @@ pub async fn fetch_pending_transactions(
         }
     }
 
-    info!("Found {} pending transactions", pending_transactions.len());
+    app_log!(info, "Found {} pending transactions", pending_transactions.len());
     Ok(pending_transactions)
 }
 

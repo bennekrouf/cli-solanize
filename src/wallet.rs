@@ -25,7 +25,7 @@ pub struct TokenBalance {
 }
 
 pub async fn generate_wallet(config: &Config) -> Result<()> {
-    info!("Generating new wallet");
+    app_log!(info, "Generating new wallet");
 
     let keypair = Keypair::new();
     let pubkey = keypair.pubkey();
@@ -36,9 +36,9 @@ pub async fn generate_wallet(config: &Config) -> Result<()> {
 
     fs::write(&config.wallet.keypair_path, keypair_json)?;
 
-    println!("✅ Wallet generated successfully!");
-    println!("📍 Public Key: {}", pubkey);
-    println!("💾 Saved to: {}", config.wallet.keypair_path);
+    app_log!(info, "✅ Wallet generated successfully!");
+    app_log!(info, "📍 Public Key: {}", pubkey);
+    app_log!(info, "💾 Saved to: {}", config.wallet.keypair_path);
 
     Ok(())
 }
@@ -47,7 +47,7 @@ pub async fn get_wallet_tokens(config: &Config) -> Result<Vec<TokenBalance>> {
     let keypair = load_keypair(config).await?;
     let client = RpcClient::new(&config.solana.rpc_url);
 
-    info!("Scanning wallet for SPL tokens");
+    app_log!(info, "Scanning wallet for SPL tokens");
 
     let mut token_balances = Vec::new();
 
@@ -70,7 +70,7 @@ pub async fn get_wallet_tokens(config: &Config) -> Result<Vec<TokenBalance>> {
         solana_client::rpc_request::TokenAccountsFilter::ProgramId(spl_token::id()),
     )?;
 
-    info!("Found {} token accounts", accounts.len());
+    app_log!(info, "Found {} token accounts", accounts.len());
 
     // Process each token account
     for account in accounts {
@@ -149,15 +149,15 @@ pub async fn list_wallet_tokens(config: &Config) -> Result<()> {
     let tokens = get_wallet_tokens(config).await?;
 
     if tokens.is_empty() {
-        println!("💸 No tokens found in wallet");
+        app_log!(info, "💸 No tokens found in wallet");
         return Ok(());
     }
 
-    println!("🪙 Wallet Token Holdings:");
-    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    app_log!(info, "🪙 Wallet Token Holdings:");
+    app_log!(info, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     for (i, token) in tokens.iter().enumerate() {
-        println!(
+        app_log!(info, 
             "{}. {} ({}) - {} tokens",
             i + 1,
             token.symbol,
@@ -168,11 +168,11 @@ pub async fn list_wallet_tokens(config: &Config) -> Result<()> {
         // Show USD value if we can get price
         if let Ok(price) = crate::jupiter::get_token_price(config, &token.symbol).await {
             let usd_value = token.balance * price;
-            println!("   💲 ~${:.2} (${:.6} per token)", usd_value, price);
+            app_log!(info, "   💲 ~${:.2} (${:.6} per token)", usd_value, price);
         }
 
-        println!("   📍 {}", token.mint);
-        println!();
+        app_log!(info, "   📍 {}", token.mint);
+        app_log!(info, );
     }
 
     Ok(())
@@ -220,7 +220,7 @@ pub async fn get_balance(config: &Config) -> Result<f64> {
     let balance = client.get_balance(&keypair.pubkey())?;
     let sol_balance = balance as f64 / solana_sdk::native_token::LAMPORTS_PER_SOL as f64;
 
-    info!("Current balance: {} SOL", sol_balance);
+    app_log!(info, "Current balance: {} SOL", sol_balance);
     Ok(sol_balance)
 }
 
@@ -230,7 +230,7 @@ pub async fn get_balance_for_pubkey(config: &Config, pubkey: &Pubkey) -> Result<
     let balance = client.get_balance(pubkey)?;
     let sol_balance = balance as f64 / solana_sdk::native_token::LAMPORTS_PER_SOL as f64;
 
-    info!("Balance for {}: {} SOL", pubkey, sol_balance);
+    app_log!(info, "Balance for {}: {} SOL", pubkey, sol_balance);
     Ok(sol_balance)
 }
 
@@ -240,7 +240,7 @@ pub async fn get_wallet_tokens_for_pubkey(
 ) -> Result<Vec<TokenBalance>> {
     let client = RpcClient::new(&config.solana.rpc_url);
 
-    info!("Scanning wallet for SPL tokens: {}", pubkey);
+    app_log!(info, "Scanning wallet for SPL tokens: {}", pubkey);
 
     let mut token_balances = Vec::new();
 
@@ -263,7 +263,7 @@ pub async fn get_wallet_tokens_for_pubkey(
         solana_client::rpc_request::TokenAccountsFilter::ProgramId(spl_token::id()),
     )?;
 
-    info!("Found {} token accounts", accounts.len());
+    app_log!(info, "Found {} token accounts", accounts.len());
 
     // Process each token account
     for account in accounts {
@@ -339,22 +339,22 @@ pub async fn request_airdrop(config: &Config, amount: f64) -> Result<()> {
 
     let lamports = (amount * solana_sdk::native_token::LAMPORTS_PER_SOL as f64) as u64;
 
-    info!("Requesting airdrop of {} SOL", amount);
+    app_log!(info, "Requesting airdrop of {} SOL", amount);
 
     match client.request_airdrop(&keypair.pubkey(), lamports) {
         Ok(signature) => {
-            println!("✅ Airdrop requested successfully!");
-            println!("🔗 Signature: {}", signature);
-            println!("⏳ Waiting for confirmation...");
+            app_log!(info, "✅ Airdrop requested successfully!");
+            app_log!(info, "🔗 Signature: {}", signature);
+            app_log!(info, "⏳ Waiting for confirmation...");
 
             // Wait for confirmation
             client.confirm_transaction(&signature)?;
 
             let new_balance = get_balance(config).await?;
-            println!("💰 New balance: {} SOL", new_balance);
+            app_log!(info, "💰 New balance: {} SOL", new_balance);
         }
         Err(e) => {
-            error!("Airdrop failed: {}", e);
+            app_log!(error, "Airdrop failed: {}", e);
             return Err(SolanaClientError::TransactionFailed {
                 reason: format!("Airdrop failed: {}", e),
             }

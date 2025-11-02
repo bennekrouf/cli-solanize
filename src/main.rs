@@ -1,10 +1,11 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use solana_sdk::signature::Signer;
-use std::str::FromStr;
-use tracing::info;
+use std::{fs::OpenOptions, str::FromStr};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, fmt};
 
-use crate::web::get_transaction_history_web;
 mod cli;
 mod config;
 mod error;
@@ -17,7 +18,6 @@ mod web;
 
 use cli::InteractiveMenu;
 use config::Config;
-// use crate::web::get_pending_transactions;
 
 #[derive(Parser)]
 #[command(name = "solana-cli-client")]
@@ -94,6 +94,13 @@ enum Commands {
     },
 }
 
+#[macro_export]
+macro_rules! app_log {
+    ($level:ident, $($arg:tt)*) => {
+        tracing::$level!(service = "api0", component = "store", $($arg)*)
+    };
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -101,10 +108,27 @@ async fn main() -> Result<()> {
     // Initialize config
     let config = Config::load(&cli.config)?;
 
-    // Initialize logging
-    let subscriber = tracing_subscriber::fmt()
-        .with_env_filter(&config.logging.level)
-        .with_target(false);
+    // Initialize logging first
+    let file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true) // Clear file on startup
+        .open("/tmp/solanize.log")
+        .expect("Failed to open log file");
+
+    tracing_subscriber::registry()
+        .with(
+            fmt::layer()
+                .json()
+                .with_writer(file)
+                .with_current_span(false)
+                .with_span_list(false),
+        )
+        .with(
+            EnvFilter::from_default_env()
+                .add_directive("trace".parse().expect("Invalid log directive")),
+        )
+        .init();
 
     match config.logging.format.as_str() {
         "json" => {
@@ -112,14 +136,17 @@ async fn main() -> Result<()> {
             subscriber.json().init();
             #[cfg(not(feature = "json"))]
             {
-                eprintln!("JSON logging not available, falling back to pretty format");
+                app_log!(
+                    info,
+                    "JSON logging not available, falling back to pretty format"
+                );
                 subscriber.pretty().init();
             }
         }
         _ => subscriber.pretty().init(),
     }
 
-    info!("Starting Solana CLI client");
+    app_log!(info, "Starting Solana CLI client");
 
     match cli.command {
         Some(Commands::Menu) | None => {
@@ -131,14 +158,14 @@ async fn main() -> Result<()> {
         }
         Some(Commands::Balance) => {
             let balance = wallet::get_balance(&config).await?;
-            println!("Balance: {} SOL", balance);
+            app_log!(info, "Balance: {} SOL", balance);
         }
         Some(Commands::Faucet { amount }) => {
             wallet::request_airdrop(&config, amount).await?;
         }
         Some(Commands::CreateTx { to, amount }) => {
             let tx = transaction::create_transaction(&config, &to, amount).await?;
-            println!("Transaction created: {}", tx);
+            app_log!(info, "Transaction created: {}", tx);
         }
         Some(Commands::SendTx { signature }) => {
             transaction::send_transaction(&config, &signature).await?;
@@ -148,12 +175,12 @@ async fn main() -> Result<()> {
         }
         Some(Commands::Price { token }) => {
             let price = jupiter::get_token_price(&config, &token).await?;
-            println!("Price for {}: ${}", token, price);
+            app_log!(info, "Price for {}: ${}", token, price);
         }
         Some(Commands::Search { query }) => {
             let tokens = token::search_tokens(&config, &query).await?;
             for token in tokens {
-                println!("{}: {} ({})", token.symbol, token.name, token.address);
+                app_log!(info, "{}: {} ({})", token.symbol, token.name, token.address);
             }
         }
         Some(Commands::ListTokens) => {
@@ -165,7 +192,7 @@ async fn main() -> Result<()> {
                 .parse::<u16>()
                 .map_err(|_| anyhow::anyhow!("ROCKET_PORT must be a valid port number"))?;
 
-            info!("Starting web server on port {}", port);
+            app_log!(info, "Starting web server on port {}", port);
             web::start_server(config, port).await?;
         }
         Some(Commands::History {
@@ -189,13 +216,14 @@ async fn main() -> Result<()> {
             .await?;
 
             if history.is_empty() {
-                println!("No transactions found");
+                app_log!(info, "No transactions found");
             } else {
-                println!("Transaction History for {}", target_pubkey);
-                println!("{}", "=".repeat(80));
+                app_log!(info, "Transaction History for {}", target_pubkey);
+                app_log!(info, "{}", "=".repeat(80));
 
                 for (i, tx) in history.iter().enumerate() {
-                    println!(
+                    app_log!(
+                        info,
                         "{}. {} | {} | {:?}",
                         i + 1,
                         &tx.signature[..8],
@@ -205,36 +233,36 @@ async fn main() -> Result<()> {
 
                     if let Some(amount) = tx.amount {
                         let symbol = tx.token_symbol.as_deref().unwrap_or("Unknown");
-                        println!("   Amount: {} {}", amount, symbol);
+                        app_log!(info, "   Amount: {} {}", amount, symbol);
                     }
 
                     if let Some(fee) = tx.fee {
-                        println!("   Fee: {} SOL", fee);
+                        app_log!(info, "   Fee: {} SOL", fee);
                     }
 
                     if let Some(block_time) = tx.block_time {
                         let dt = chrono::DateTime::from_timestamp(block_time, 0)
                             .unwrap_or_else(|| chrono::Utc::now());
-                        println!("   Time: {}", dt.format("%Y-%m-%d %H:%M:%S UTC"));
+                        app_log!(info, "   Time: {}", dt.format("%Y-%m-%d %H:%M:%S UTC"));
                     }
 
                     match tx.confirmation_status {
                         transaction::ConfirmationStatus::Finalized => {
-                            println!("   Status: Finalized")
+                            app_log!(info, "   Status: Finalized")
                         }
                         transaction::ConfirmationStatus::Confirmed => {
-                            println!("   Status: Confirmed")
+                            app_log!(info, "   Status: Confirmed")
                         }
                         transaction::ConfirmationStatus::Processed => {
-                            println!("   Status: Processed")
+                            app_log!(info, "   Status: Processed")
                         }
                     }
 
                     if let Some(error) = &tx.error {
-                        println!("   Error: {}", error);
+                        app_log!(info, "   Error: {}", error);
                     }
 
-                    println!();
+                    app_log!(info,);
                 }
             }
         }
@@ -250,13 +278,14 @@ async fn main() -> Result<()> {
             let pending = transaction::fetch_pending_transactions(&config, &target_pubkey).await?;
 
             if pending.is_empty() {
-                println!("No pending transactions");
+                app_log!(info, "No pending transactions");
             } else {
-                println!("Pending Transactions for {}", target_pubkey);
-                println!("{}", "=".repeat(50));
+                app_log!(info, "Pending Transactions for {}", target_pubkey);
+                app_log!(info, "{}", "=".repeat(50));
 
                 for (i, tx) in pending.iter().enumerate() {
-                    println!(
+                    app_log!(
+                        info,
                         "{}. {} | {} | {:?}",
                         i + 1,
                         &tx.signature[..8],
@@ -266,11 +295,11 @@ async fn main() -> Result<()> {
 
                     if let Some(amount) = tx.amount {
                         let symbol = tx.token_symbol.as_deref().unwrap_or("Unknown");
-                        println!("   Amount: {} {}", amount, symbol);
+                        app_log!(info, "   Amount: {} {}", amount, symbol);
                     }
 
-                    println!("   Status: Pending confirmation");
-                    println!();
+                    app_log!(info, "   Status: Pending confirmation");
+                    app_log!(info,);
                 }
             }
         }
