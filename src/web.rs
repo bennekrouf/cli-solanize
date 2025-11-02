@@ -1,9 +1,9 @@
+use crate::app_log;
 use anyhow::Result;
 use rocket::{State, get, post, routes, serde::json::Json};
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
-use tracing::{error, info};
 
 use crate::{config::Config, jupiter, token, transaction, wallet};
 
@@ -184,9 +184,13 @@ pub async fn prepare_swap(
     request: Json<PrepareSwapRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PrepareSwapResponse>> {
-    app_log!(info, 
+    app_log!(
+        info,
         "Prepare swap request: {} {} -> {} for {}",
-        request.amount, request.from_token, request.to_token, request.payer_pubkey
+        request.amount,
+        request.from_token,
+        request.to_token,
+        request.payer_pubkey
     );
 
     match parse_public_key(&request.payer_pubkey) {
@@ -233,9 +237,12 @@ pub async fn prepare_transaction(
     request: Json<PrepareTransactionRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PrepareTransactionResponse>> {
-    app_log!(info, 
+    app_log!(
+        info,
         "Prepare transaction request: {} SOL from {} to {}",
-        request.amount, request.payer_pubkey, request.to_address
+        request.amount,
+        request.payer_pubkey,
+        request.to_address
     );
 
     match parse_public_key(&request.payer_pubkey) {
@@ -458,7 +465,11 @@ pub async fn start_server(config: Config, port: u16) -> Result<()> {
         ],
     );
 
-    app_log!(info, "Starting Solana API server on http://0.0.0.0:{}", port);
+    app_log!(
+        info,
+        "Starting Solana API server on http://0.0.0.0:{}",
+        port
+    );
     app_log!(info, "Available endpoints:");
     app_log!(info, "  GET  /api/v1/health");
     app_log!(info, "  POST /api/v1/balance");
@@ -509,7 +520,11 @@ pub async fn get_transaction_history_web(
     request: Json<TransactionHistoryRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<TransactionHistoryResponse>> {
-    app_log!(info, "Transaction history request for pubkey: {}", request.pubkey);
+    app_log!(
+        info,
+        "Transaction history request for pubkey: {}",
+        request.pubkey
+    );
 
     match parse_public_key(&request.pubkey) {
         Ok(pubkey) => {
@@ -568,7 +583,8 @@ pub async fn get_pending_transactions_web(
     request: Json<PendingTransactionsRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PendingTransactionsResponse>> {
-    app_log!(info, 
+    app_log!(
+        info,
         "Pending transactions request for pubkey: {}",
         request.pubkey
     );

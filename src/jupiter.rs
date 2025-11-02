@@ -1,3 +1,4 @@
+use crate::app_log;
 use crate::{config::Config, error::SolanaClientError, wallet::load_keypair};
 use anyhow::Result;
 use base64;
@@ -7,7 +8,6 @@ use solana_sdk::signature::Signer;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{pubkey::Pubkey, signature::Keypair, transaction::Transaction};
 use std::str::FromStr;
-use tracing::{error, info};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QuoteResponse {
@@ -162,7 +162,8 @@ pub async fn prepare_swap_transaction(
     };
     let amount_units = (amount * 10_f64.powi(decimals)) as u64;
 
-    app_log!(info, 
+    app_log!(
+        info,
         "Preparing swap: {} {} for {} (payer: {})",
         amount,
         from_symbol.to_uppercase(),
@@ -181,7 +182,8 @@ pub async fn prepare_swap_transaction(
         });
     let price_impact = quote.price_impact_pct.parse::<f64>()?;
 
-    app_log!(info, 
+    app_log!(
+        info,
         "Quote: {} {} -> {:.6} {}, price impact: {:.4}%",
         amount,
         from_symbol.to_uppercase(),
@@ -240,9 +242,11 @@ pub async fn get_quote(
     let client = Client::new();
     let url = format!("{}/quote", config.jupiter.api_url);
 
-    app_log!(info, 
+    app_log!(
+        info,
         "Getting quote from Jupiter: {} -> {}",
-        input_mint, output_mint
+        input_mint,
+        output_mint
     );
 
     let response = client
@@ -334,7 +338,8 @@ pub async fn swap_tokens(
     }; // USDC has 6 decimals
     let amount_units = (amount * 10_f64.powi(decimals)) as u64;
 
-    app_log!(info, 
+    app_log!(
+        info,
         "🔄 Swapping {} {} for {}...",
         amount,
         from_symbol.to_uppercase(),
@@ -353,7 +358,8 @@ pub async fn swap_tokens(
     let price_impact = quote.price_impact_pct.parse::<f64>()?;
 
     app_log!(info, "📊 Quote received:");
-    app_log!(info, 
+    app_log!(
+        info,
         "   Expected output: {:.6} {}",
         out_amount_f64,
         to_symbol.to_uppercase()
@@ -378,7 +384,8 @@ pub async fn swap_tokens(
         Ok(signature) => {
             app_log!(info, "✅ Swap completed successfully!");
             app_log!(info, "🔗 Signature: {}", signature);
-            app_log!(info, 
+            app_log!(
+                info,
                 "💰 Swapped {} {} for ~{:.6} {}",
                 amount,
                 from_symbol.to_uppercase(),
@@ -422,7 +429,8 @@ pub async fn swap_tokens_with_keypair(
     }; // USDC has 6 decimals
     let amount_units = (amount * 10_f64.powi(decimals)) as u64;
 
-    app_log!(info, 
+    app_log!(
+        info,
         "Swapping {} {} for {} with keypair {}",
         amount,
         from_symbol.to_uppercase(),
@@ -441,7 +449,8 @@ pub async fn swap_tokens_with_keypair(
         });
     let price_impact = quote.price_impact_pct.parse::<f64>()?;
 
-    app_log!(info, 
+    app_log!(
+        info,
         "Quote: {} {} -> {:.6} {}, price impact: {:.4}%",
         amount,
         from_symbol.to_uppercase(),
