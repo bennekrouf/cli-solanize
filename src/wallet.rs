@@ -1,18 +1,12 @@
+use crate::app_log;
 use crate::{config::Config, error::SolanaClientError, token};
 use anyhow::Result;
-// use solana_account_decoder::{UiAccountEncoding, parse_token::UiTokenAccount};
-use solana_client::{
-    rpc_client::RpcClient,
-    // rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
-    // rpc_filter::{Memcmp, RpcFilterType},
-};
+use solana_client::rpc_client::RpcClient;
 use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signer},
-    // system_instruction,
 };
 use std::fs;
-use tracing::{error, info};
 
 #[derive(Debug, Clone)]
 pub struct TokenBalance {
@@ -154,10 +148,14 @@ pub async fn list_wallet_tokens(config: &Config) -> Result<()> {
     }
 
     app_log!(info, "🪙 Wallet Token Holdings:");
-    app_log!(info, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    app_log!(
+        info,
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    );
 
     for (i, token) in tokens.iter().enumerate() {
-        app_log!(info, 
+        app_log!(
+            info,
             "{}. {} ({}) - {} tokens",
             i + 1,
             token.symbol,
@@ -172,7 +170,7 @@ pub async fn list_wallet_tokens(config: &Config) -> Result<()> {
         }
 
         app_log!(info, "   📍 {}", token.mint);
-        app_log!(info, );
+        app_log!(info,);
     }
 
     Ok(())
@@ -364,4 +362,3 @@ pub async fn request_airdrop(config: &Config, amount: f64) -> Result<()> {
 
     Ok(())
 }
-

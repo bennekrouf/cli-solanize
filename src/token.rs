@@ -1,8 +1,8 @@
+use crate::app_log;
 use crate::{config::Config, error::SolanaClientError};
 use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct TokenInfo {
@@ -99,7 +99,12 @@ pub async fn search_tokens(config: &Config, query: &str) -> Result<Vec<TokenInfo
     // Limit results to top 20
     matches.truncate(20);
 
-    app_log!(info, "🔍 Found {} tokens matching '{}':", matches.len(), query);
+    app_log!(
+        info,
+        "🔍 Found {} tokens matching '{}':",
+        matches.len(),
+        query
+    );
 
     Ok(matches)
 }

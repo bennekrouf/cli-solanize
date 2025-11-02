@@ -1,22 +1,20 @@
+use crate::app_log;
 use crate::{config::Config, error::SolanaClientError, wallet::load_keypair};
 use anyhow::Result;
 use solana_client::rpc_client::GetConfirmedSignaturesForAddress2Config;
 use solana_sdk::{
     message::Message,
-    // pubkey::Pubkey,
     signature::Keypair,
     signer::Signer,
     system_instruction,
     transaction::{Transaction, VersionedTransaction},
 };
 use std::str::FromStr;
-use tracing::{error, info};
-// use solana_client::rpc_config::RpcSignaturesForAddressConfig;
-// use solana_client::rpc_client::GetConfirmedSignaturesForAddress2Config;
+
 use serde::{Deserialize, Serialize};
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
-use solana_transaction_status::{UiTransactionEncoding, EncodedConfirmedTransactionWithStatusMeta};
+use solana_transaction_status::{EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TransactionHistory {
@@ -76,7 +74,12 @@ pub async fn create_transaction(config: &Config, to_address: &str, amount: f64) 
 
     let lamports = (amount * solana_sdk::native_token::LAMPORTS_PER_SOL as f64) as u64;
 
-    app_log!(info, "Creating transaction: {} SOL to {}", amount, to_address);
+    app_log!(
+        info,
+        "Creating transaction: {} SOL to {}",
+        amount,
+        to_address
+    );
 
     // Create transfer instruction
     let instruction = system_instruction::transfer(&from_keypair.pubkey(), &to_pubkey, lamports);
@@ -126,9 +129,12 @@ pub async fn prepare_sol_transfer(
 
     let lamports = (amount * solana_sdk::native_token::LAMPORTS_PER_SOL as f64) as u64;
 
-    app_log!(info, 
+    app_log!(
+        info,
         "Preparing SOL transfer: {} SOL from {} to {}",
-        amount, payer_pubkey, to_address
+        amount,
+        payer_pubkey,
+        to_address
     );
 
     // Create transfer instruction
@@ -252,7 +258,8 @@ pub async fn create_transaction_with_keypair(
 
     let lamports = (amount * solana_sdk::native_token::LAMPORTS_PER_SOL as f64) as u64;
 
-    app_log!(info, 
+    app_log!(
+        info,
         "Creating transaction: {} SOL from {} to {}",
         amount,
         from_keypair.pubkey(),
@@ -278,7 +285,6 @@ pub async fn create_transaction_with_keypair(
     Ok(tx_string)
 }
 
-
 /// Core function to get transaction history without web dependencies
 pub async fn fetch_transaction_history(
     config: &Config,
@@ -289,7 +295,12 @@ pub async fn fetch_transaction_history(
     let client = RpcClient::new(&config.solana.rpc_url);
     let limit = limit.unwrap_or(50).min(1000); // Cap at 1000
 
-    app_log!(info, "Fetching transaction history for {}, limit: {}", pubkey, limit);
+    app_log!(
+        info,
+        "Fetching transaction history for {}, limit: {}",
+        pubkey,
+        limit
+    );
 
     // Get transaction signatures
     // let mut config_params = solana_client::rpc_config::RpcTransactionLogsConfigWrapper {
@@ -310,7 +321,7 @@ pub async fn fetch_transaction_history(
 
     for sig_info in signatures {
         let signature = sig_info.signature;
-        
+
         // Determine status from signature info
         let status = match sig_info.err {
             None => TransactionStatus::Success,
@@ -319,21 +330,25 @@ pub async fn fetch_transaction_history(
 
         let confirmation_status = match sig_info.confirmation_status {
             Some(status) => match status {
-                solana_transaction_status::TransactionConfirmationStatus::Processed => ConfirmationStatus::Processed,
-                solana_transaction_status::TransactionConfirmationStatus::Confirmed => ConfirmationStatus::Confirmed,
-                solana_transaction_status::TransactionConfirmationStatus::Finalized => ConfirmationStatus::Finalized,
+                solana_transaction_status::TransactionConfirmationStatus::Processed => {
+                    ConfirmationStatus::Processed
+                }
+                solana_transaction_status::TransactionConfirmationStatus::Confirmed => {
+                    ConfirmationStatus::Confirmed
+                }
+                solana_transaction_status::TransactionConfirmationStatus::Finalized => {
+                    ConfirmationStatus::Finalized
+                }
             },
             None => ConfirmationStatus::Finalized, // Default for older transactions
         };
 
         // Try to get transaction details for amount/type analysis
-        let (amount, token_symbol, tx_type) = match client.get_transaction(
-            &signature.parse()?,
-            UiTransactionEncoding::JsonParsed,
-        ) {
-            Ok(tx) => analyze_transaction_details(&tx),
-            Err(_) => (None, None, TransactionType::Unknown),
-        };
+        let (amount, token_symbol, tx_type) =
+            match client.get_transaction(&signature.parse()?, UiTransactionEncoding::JsonParsed) {
+                Ok(tx) => analyze_transaction_details(&tx),
+                Err(_) => (None, None, TransactionType::Unknown),
+            };
 
         let fee = None; //sig_info.fee.map(|f| f as f64 / solana_sdk::native_token::LAMPORTS_PER_SOL as f64);
 
@@ -380,13 +395,15 @@ pub async fn fetch_pending_transactions(
     for sig_info in signatures {
         // Only include transactions that are processed but not confirmed/finalized
         if let Some(status) = &sig_info.confirmation_status {
-            if matches!(status, solana_transaction_status::TransactionConfirmationStatus::Processed) {
+            if matches!(
+                status,
+                solana_transaction_status::TransactionConfirmationStatus::Processed
+            ) {
                 let signature = sig_info.signature;
-                
-                let (amount, token_symbol, tx_type) = match client.get_transaction(
-                    &signature.parse()?,
-                    UiTransactionEncoding::JsonParsed,
-                ) {
+
+                let (amount, token_symbol, tx_type) = match client
+                    .get_transaction(&signature.parse()?, UiTransactionEncoding::JsonParsed)
+                {
                     Ok(tx) => analyze_transaction_details(&tx),
                     Err(_) => (None, None, TransactionType::Unknown),
                 };
@@ -409,7 +426,11 @@ pub async fn fetch_pending_transactions(
         }
     }
 
-    app_log!(info, "Found {} pending transactions", pending_transactions.len());
+    app_log!(
+        info,
+        "Found {} pending transactions",
+        pending_transactions.len()
+    );
     Ok(pending_transactions)
 }
 
@@ -427,8 +448,10 @@ fn analyze_transaction_details(
             // Look for significant balance changes (excluding fees)
             for (i, (pre, post)) in pre_balances.iter().zip(post_balances.iter()).enumerate() {
                 let diff = (*post as i64) - (*pre as i64);
-                if diff.abs() > 1000000 { // More than 0.001 SOL
-                    amount = Some(diff.abs() as f64 / solana_sdk::native_token::LAMPORTS_PER_SOL as f64);
+                if diff.abs() > 1000000 {
+                    // More than 0.001 SOL
+                    amount =
+                        Some(diff.abs() as f64 / solana_sdk::native_token::LAMPORTS_PER_SOL as f64);
                     token_symbol = Some("SOL".to_string());
                     tx_type = TransactionType::Transfer;
                     break;

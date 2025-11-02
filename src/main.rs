@@ -10,6 +10,7 @@ mod cli;
 mod config;
 mod error;
 mod jupiter;
+mod logging_macros;
 mod solana_client;
 mod token;
 mod transaction;
@@ -94,13 +95,6 @@ enum Commands {
     },
 }
 
-#[macro_export]
-macro_rules! app_log {
-    ($level:ident, $($arg:tt)*) => {
-        tracing::$level!(service = "api0", component = "store", $($arg)*)
-    };
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -108,43 +102,7 @@ async fn main() -> Result<()> {
     // Initialize config
     let config = Config::load(&cli.config)?;
 
-    // Initialize logging first
-    let file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true) // Clear file on startup
-        .open("/tmp/solanize.log")
-        .expect("Failed to open log file");
-
-    tracing_subscriber::registry()
-        .with(
-            fmt::layer()
-                .json()
-                .with_writer(file)
-                .with_current_span(false)
-                .with_span_list(false),
-        )
-        .with(
-            EnvFilter::from_default_env()
-                .add_directive("trace".parse().expect("Invalid log directive")),
-        )
-        .init();
-
-    match config.logging.format.as_str() {
-        "json" => {
-            #[cfg(feature = "json")]
-            subscriber.json().init();
-            #[cfg(not(feature = "json"))]
-            {
-                app_log!(
-                    info,
-                    "JSON logging not available, falling back to pretty format"
-                );
-                subscriber.pretty().init();
-            }
-        }
-        _ => subscriber.pretty().init(),
-    }
+    init_logging!(config.logging.format, "/tmp/solanize.log", "api0", "store");
 
     app_log!(info, "Starting Solana CLI client");
 

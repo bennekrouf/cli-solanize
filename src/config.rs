@@ -1,7 +1,7 @@
+use crate::app_log;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use tracing::info;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {

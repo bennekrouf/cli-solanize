@@ -1,8 +1,8 @@
+use crate::app_log;
 use crate::{config::Config, jupiter, token, transaction, wallet};
 use anyhow::Result;
 use dialoguer::{Confirm, Input, Select, theme::ColorfulTheme};
 use solana_sdk::signature::Signer;
-use tracing::error;
 
 pub struct InteractiveMenu {
     config: Config,
@@ -198,7 +198,8 @@ impl InteractiveMenu {
 
         app_log!(info, "\n💼 Available tokens in your wallet:");
         for (i, token) in wallet_tokens.iter().enumerate().take(10) {
-            app_log!(info, 
+            app_log!(
+                info,
                 "{}. {} - {} tokens",
                 i + 1,
                 token.symbol,
@@ -227,7 +228,8 @@ impl InteractiveMenu {
         match jupiter::get_token_price(&self.config, &from_token).await {
             Ok(price) => {
                 let estimated_value = amount * price;
-                app_log!(info, 
+                app_log!(
+                    info,
                     "💲 Current {} price: ${:.6}",
                     from_token.to_uppercase(),
                     price
@@ -270,7 +272,12 @@ impl InteractiveMenu {
 
                 // Also show token info if available
                 if let Ok(Some(token_info)) = token::get_token_info(&self.config, &token).await {
-                    app_log!(info, "📝 Token: {} ({})", token_info.name, token_info.symbol);
+                    app_log!(
+                        info,
+                        "📝 Token: {} ({})",
+                        token_info.name,
+                        token_info.symbol
+                    );
                     app_log!(info, "📍 Address: {}", token_info.address);
                     app_log!(info, "🔢 Decimals: {}", token_info.decimals);
                 }
@@ -301,7 +308,8 @@ impl InteractiveMenu {
                 } else {
                     app_log!(info, "\n📋 Search Results:");
                     for (i, token) in tokens.iter().enumerate() {
-                        app_log!(info, 
+                        app_log!(
+                            info,
                             "{}. {} ({}) - {}",
                             i + 1,
                             token.symbol,
@@ -406,7 +414,8 @@ impl InteractiveMenu {
                     for (i, tx) in history.iter().enumerate() {
                         app_log!(info, "{}. {} | {:?}", i + 1, &tx.signature[..8], tx.status);
                         if let Some(amount) = tx.amount {
-                            app_log!(info, 
+                            app_log!(
+                                info,
                                 "   Amount: {} {}",
                                 amount,
                                 tx.token_symbol.as_deref().unwrap_or("Unknown")
