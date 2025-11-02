@@ -1,24 +1,20 @@
-use anyhow::Result;
-use clap::{Parser, Subcommand};
-use solana_sdk::signature::Signer;
-use std::{fs::OpenOptions, str::FromStr};
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{EnvFilter, fmt};
-
 mod cli;
 mod config;
-mod error;
 mod jupiter;
-mod logging_macros;
-mod solana_client;
 mod token;
 mod transaction;
 mod wallet;
 mod web;
 
-use cli::InteractiveMenu;
-use config::Config;
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+use graflog::app_log;
+use graflog::init_logging;
+use solana_sdk::signature::Signer;
+use std::str::FromStr;
+
+use crate::cli::InteractiveMenu;
+use crate::config::Config;
 
 #[derive(Parser)]
 #[command(name = "solana-cli-client")]
@@ -102,8 +98,7 @@ async fn main() -> Result<()> {
     // Initialize config
     let config = Config::load(&cli.config)?;
 
-    init_logging!(config.logging.format, "/tmp/solanize.log", "api0", "store");
-
+    init_logging!("/var/log/solanize.log", "solanize", "cli");
     app_log!(info, "Starting Solana CLI client");
 
     match cli.command {
