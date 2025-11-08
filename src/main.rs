@@ -99,7 +99,7 @@ async fn main() -> Result<()> {
     // Initialize config
     let config = Config::load(&cli.config)?;
 
-    init_logging!("/var/log/solanize.log", "solanize", "cli");
+    init_logging!("/var/log/solanize.log", "solanize", "cli", "debug,rocket::server=off");
     app_log!(info, "Starting Solana CLI client");
 
     match cli.command {
