@@ -13,6 +13,7 @@ use graflog::app_log;
 use graflog::init_logging;
 use solana_sdk::signature::Signer;
 use std::str::FromStr;
+use graflog::LogOption;
 
 use crate::cli::InteractiveMenu;
 use crate::config::Config;
@@ -99,7 +100,10 @@ async fn main() -> Result<()> {
     // Initialize config
     let config = Config::load(&cli.config)?;
 
-    init_logging!("/var/log/solanize.log", "solanize", "cli", "debug,rocket::server=off");
+    init_logging!("/var/log/solanize.log", "solanize", "cli", &[
+        LogOption::Debug,
+        LogOption::RocketOff
+    ]);
     app_log!(info, "Starting Solana CLI client");
 
     match cli.command {
