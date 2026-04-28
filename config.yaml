@@ -21,3 +21,8 @@ jupiter:
 tokens:
   sol: "So11111111111111111111111111111111111111112"
   usdc: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+
+# Shared secret: gateway must present this as "Authorization: Bearer <secret>"
+# Override at runtime via CLI_INTERNAL_SECRET env var (recommended for production)
+internal:
+  secret: "change-me-in-production"
