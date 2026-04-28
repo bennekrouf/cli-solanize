@@ -1,2 +1,7 @@
 /target
+
+# Never commit the wallet private key
 wallet.json
+
+# Local env overrides
+*.env

@@ -1,11 +1,42 @@
 use crate::app_log;
 use anyhow::Result;
-use rocket::{State, get, post, routes, serde::json::Json};
+use rocket::{
+    State, get, post, routes, serde::json::Json,
+    http::Status,
+    request::{FromRequest, Outcome},
+};
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
 
 use crate::{config::Config, jupiter, token, transaction, wallet};
+
+// ── Internal auth guard ───────────────────────────────────────────────────────
+// The gateway-solanize service must present "Authorization: Bearer <CLI_INTERNAL_SECRET>"
+// on every request. This prevents any other process on the VPS from calling us directly.
+
+pub struct InternalAuth;
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for InternalAuth {
+    type Error = ();
+
+    async fn from_request(req: &'r rocket::Request<'_>) -> Outcome<Self, Self::Error> {
+        let config = match req.guard::<&State<Config>>().await {
+            Outcome::Success(c) => c,
+            _ => return Outcome::Error((Status::InternalServerError, ())),
+        };
+
+        let expected = format!("Bearer {}", config.internal.secret);
+        match req.headers().get_one("Authorization") {
+            Some(h) if h == expected => Outcome::Success(InternalAuth),
+            _ => {
+                app_log!(warn, "Rejected unauthenticated request to {} {}", req.method(), req.uri());
+                Outcome::Error((Status::Unauthorized, ()))
+            }
+        }
+    }
+}
 
 #[derive(Deserialize)]
 pub struct BalanceRequest {
@@ -146,6 +177,7 @@ pub fn health() -> Json<ApiResponse<String>> {
 
 #[post("/balance", data = "<request>")]
 pub async fn get_balance(
+    _auth: InternalAuth,
     request: Json<BalanceRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<BalanceResponse>> {
@@ -181,6 +213,7 @@ pub async fn get_balance(
 
 #[post("/swap/prepare", data = "<request>")]
 pub async fn prepare_swap(
+    _auth: InternalAuth,
     request: Json<PrepareSwapRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PrepareSwapResponse>> {
@@ -234,6 +267,7 @@ pub async fn prepare_swap(
 
 #[post("/transaction/prepare", data = "<request>")]
 pub async fn prepare_transaction(
+    _auth: InternalAuth,
     request: Json<PrepareTransactionRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PrepareTransactionResponse>> {
@@ -287,6 +321,7 @@ pub async fn prepare_transaction(
 
 #[post("/transaction/submit", data = "<request>")]
 pub async fn submit_signed_transaction(
+    _auth: InternalAuth,
     request: Json<SubmitSignedRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<SubmitResponse>> {
@@ -314,6 +349,7 @@ pub async fn submit_signed_transaction(
 
 #[post("/price", data = "<request>")]
 pub async fn get_token_price(
+    _auth: InternalAuth,
     request: Json<PriceRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PriceResponse>> {
@@ -342,6 +378,7 @@ pub async fn get_token_price(
 
 #[post("/tokens/search", data = "<request>")]
 pub async fn search_tokens(
+    _auth: InternalAuth,
     request: Json<SearchRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<TokenSearchResponse>> {
@@ -383,6 +420,7 @@ pub async fn search_tokens(
 
 #[post("/wallet/tokens", data = "<request>")]
 pub async fn get_wallet_tokens(
+    _auth: InternalAuth,
     request: Json<WalletTokensRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<WalletTokensResponse>> {
@@ -447,7 +485,7 @@ pub async fn get_wallet_tokens(
 pub async fn start_server(config: Config, port: u16) -> Result<()> {
     let figment = rocket::Config::figment()
         .merge(("port", port))
-        .merge(("address", "0.0.0.0"));
+        .merge(("address", "127.0.0.1")); // localhost-only — gateway is the sole caller
 
     let rocket = rocket::custom(figment).manage(config).mount(
         "/solana", // Changed from "/api/v1" to "/solana"
@@ -467,7 +505,7 @@ pub async fn start_server(config: Config, port: u16) -> Result<()> {
 
     app_log!(
         info,
-        "Starting Solana API server on http://0.0.0.0:{}",
+        "Starting Solana API server on http://127.0.0.1:{} (localhost only)",
         port
     );
     app_log!(info, "Available endpoints:");
@@ -517,6 +555,7 @@ pub struct PendingTransactionsResponse {
 
 #[post("/transactions/history", data = "<request>")]
 pub async fn get_transaction_history_web(
+    _auth: InternalAuth,
     request: Json<TransactionHistoryRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<TransactionHistoryResponse>> {
@@ -580,6 +619,7 @@ pub async fn get_transaction_history_web(
 
 #[post("/transactions/pending", data = "<request>")]
 pub async fn get_pending_transactions_web(
+    _auth: InternalAuth,
     request: Json<PendingTransactionsRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PendingTransactionsResponse>> {
