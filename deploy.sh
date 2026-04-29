@@ -74,14 +74,9 @@ step "3/3 — Restart cli-solanize"
 
 PM2=$(which pm2)
 sudo -u "$DEPLOY_USER" HOME="/home/$DEPLOY_USER" \
-  ROCKET_PORT="$ROCKET_PORT" CONFIG_PATH="$APP_DIR/config/cli-solanize.yaml" \
   $PM2 restart "$PM2_NAME" || \
   sudo -u "$DEPLOY_USER" HOME="/home/$DEPLOY_USER" \
-    $PM2 start "$BIN_DIR/$BINARY_NAME" \
-      --name "$PM2_NAME" \
-      --env "ROCKET_PORT=$ROCKET_PORT" \
-      --env "CONFIG_PATH=$APP_DIR/config/cli-solanize.yaml" \
-      -- server
+    $PM2 start "$SRC_DIR/ecosystem.config.js" --only "$PM2_NAME"
 
 sudo -u "$DEPLOY_USER" HOME="/home/$DEPLOY_USER" $PM2 save
 log "$PM2_NAME restarted"
