@@ -9,11 +9,13 @@ use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
 
-use crate::{config::Config, jupiter, token, transaction, wallet};
+use crate::{config::Config, jupiter, oidc::OidcVerifier, token, transaction, wallet};
 
 // ── Internal auth guard ───────────────────────────────────────────────────────
-// The gateway-solanize service must present "Authorization: Bearer <CLI_INTERNAL_SECRET>"
-// on every request. This prevents any other process on the VPS from calling us directly.
+// Two callers are allowed on every /solana route:
+//   • gateway-solanize, with "Authorization: Bearer <CLI_INTERNAL_SECRET>"
+//   • the api0 gateway, with a Google OIDC token from its service account
+//     (see oidc.rs) — from any server, through the public reverse proxy.
 
 pub struct InternalAuth;
 
@@ -27,15 +29,38 @@ impl<'r> FromRequest<'r> for InternalAuth {
             _ => return Outcome::Error((Status::InternalServerError, ())),
         };
 
-        let expected = format!("Bearer {}", config.internal.secret);
-        match req.headers().get_one("Authorization") {
-            Some(h) if h == expected => Outcome::Success(InternalAuth),
-            _ => {
-                app_log!(warn, "Rejected unauthenticated request to {} {}", req.method(), req.uri());
-                Outcome::Error((Status::Unauthorized, ()))
+        let Some(token) = req
+            .headers()
+            .get_one("Authorization")
+            .and_then(|h| h.strip_prefix("Bearer "))
+        else {
+            app_log!(warn, "Rejected unauthenticated request to {} {}", req.method(), req.uri());
+            return Outcome::Error((Status::Unauthorized, ()));
+        };
+
+        if constant_time_eq(token.as_bytes(), config.internal.secret.as_bytes()) {
+            return Outcome::Success(InternalAuth);
+        }
+
+        if OidcVerifier::looks_like_google_token(token) {
+            if let Outcome::Success(verifier) = req.guard::<&State<Option<OidcVerifier>>>().await {
+                if let Some(verifier) = verifier.inner() {
+                    match verifier.verify(token).await {
+                        Ok(()) => return Outcome::Success(InternalAuth),
+                        Err(e) => app_log!(warn, "Rejected api0 OIDC token on {} {}: {}", req.method(), req.uri(), e),
+                    }
+                }
             }
         }
+
+        app_log!(warn, "Rejected unauthenticated request to {} {}", req.method(), req.uri());
+        Outcome::Error((Status::Unauthorized, ()))
     }
+}
+
+/// Compares secrets without leaking the length of the matching prefix.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 #[derive(Deserialize)]
@@ -483,12 +508,15 @@ pub async fn get_wallet_tokens(
 }
 
 pub async fn start_server(config: Config, port: u16) -> Result<()> {
+    // Still localhost-only: remote callers (api0) come in through the nginx
+    // reverse proxy on this host, never straight to this port.
     let figment = rocket::Config::figment()
         .merge(("port", port))
-        .merge(("address", "127.0.0.1")); // localhost-only — gateway is the sole caller
+        .merge(("address", "127.0.0.1"));
 
-    let rocket = rocket::custom(figment).manage(config).mount(
-        "/solana", // Changed from "/api/v1" to "/solana"
+    let oidc = OidcVerifier::from_config(&config.api0);
+    let rocket = rocket::custom(figment).manage(config).manage(oidc).mount(
+        "/solana",
         routes![
             health,
             get_balance,
@@ -509,16 +537,16 @@ pub async fn start_server(config: Config, port: u16) -> Result<()> {
         port
     );
     app_log!(info, "Available endpoints:");
-    app_log!(info, "  GET  /api/v1/health");
-    app_log!(info, "  POST /api/v1/balance");
-    app_log!(info, "  POST /api/v1/swap/prepare");
-    app_log!(info, "  POST /api/v1/transaction/prepare");
-    app_log!(info, "  POST /api/v1/transaction/submit");
-    app_log!(info, "  POST /api/v1/price");
-    app_log!(info, "  POST /api/v1/tokens/search");
-    app_log!(info, "  POST /api/v1/wallet/tokens");
-    app_log!(info, "  POST /api/v1/transactions/history");
-    app_log!(info, "  POST /api/v1/transactions/pending");
+    app_log!(info, "  GET  /solana/health");
+    app_log!(info, "  POST /solana/balance");
+    app_log!(info, "  POST /solana/swap/prepare");
+    app_log!(info, "  POST /solana/transaction/prepare");
+    app_log!(info, "  POST /solana/transaction/submit");
+    app_log!(info, "  POST /solana/price");
+    app_log!(info, "  POST /solana/tokens/search");
+    app_log!(info, "  POST /solana/wallet/tokens");
+    app_log!(info, "  POST /solana/transactions/history");
+    app_log!(info, "  POST /solana/transactions/pending");
 
     let _ = rocket.launch().await?;
 

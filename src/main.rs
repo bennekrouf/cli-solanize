@@ -2,6 +2,7 @@ mod cli;
 mod config;
 mod error;
 mod jupiter;
+mod oidc;
 mod token;
 mod transaction;
 mod wallet;

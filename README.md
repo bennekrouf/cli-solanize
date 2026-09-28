@@ -70,6 +70,31 @@ logging:
   format: "pretty"
 ```
 
+## Calling it through api0
+
+The server binds to `127.0.0.1` only. Remote callers reach it through nginx at
+`https://api.ribh.io/solana/*` ([deploy/nginx-api.ribh.io.conf](deploy/nginx-api.ribh.io.conf)),
+the same way api0 reaches cvenom at `api.cvenom.com`, so api0 can run on this VPS or anywhere else.
+
+Every route except `/solana/health` accepts one of:
+
+| Caller | `Authorization: Bearer …` |
+|---|---|
+| gateway-solanize | `CLI_INTERNAL_SECRET` |
+| api0 gateway | a Google OIDC token minted by the api0 tenant's service account |
+
+The OIDC path is on when both are set (env, or `api0:` in `config.yaml`):
+
+```bash
+SOLANIZE_OIDC_AUDIENCE=https://api.ribh.io
+SOLANIZE_OIDC_SERVICE_ACCOUNT=<api0 tenant service account email>
+```
+
+The token's audience and the service account that minted it are both checked;
+any Google service account can mint a token for any audience, so the audience
+alone proves nothing. On the api0 side the tenant uses downstream auth
+`google_service_account` with `target_audience` set to the same URL.
+
 ## Commands
 
 - `menu` - Interactive terminal menu (default)
