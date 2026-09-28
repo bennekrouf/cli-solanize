@@ -1,7 +1,17 @@
 solana:
-  network: "devnet"  # devnet, testnet, mainnet
-  rpc_url: "https://api.devnet.solana.com"
+  network: "mainnet"  # default when a request names none
   commitment: "confirmed"
+  # A web request may pick any of these with "network": "<name>".
+  # Override an RPC with SOLANIZE_RPC_URL_<NAME> (e.g. SOLANIZE_RPC_URL_MAINNET)
+  # to use a paid endpoint without committing its key — the public mainnet RPC
+  # is heavily rate-limited.
+  networks:
+    mainnet:
+      rpc_url: "https://api.mainnet-beta.solana.com"
+      usdc: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+    devnet:
+      rpc_url: "https://api.devnet.solana.com"
+      usdc: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
   
 wallet:
   keypair_path: "./wallet.json"
@@ -20,7 +30,7 @@ jupiter:
   
 tokens:
   sol: "So11111111111111111111111111111111111111112"
-  usdc: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+  usdc: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # replaced by the active network's
 
 # Shared secret: gateway must present this as "Authorization: Bearer <secret>"
 # Override at runtime via CLI_INTERNAL_SECRET env var (recommended for production)
