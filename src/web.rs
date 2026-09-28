@@ -66,6 +66,9 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 #[derive(Deserialize)]
 pub struct BalanceRequest {
     pub pubkey: String, // Public key to check balance for
+    /// "mainnet" (default) or "devnet" — see solana.networks in config.yaml.
+    #[serde(default)]
+    pub network: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -74,6 +77,9 @@ pub struct PrepareSwapRequest {
     pub from_token: String,
     pub to_token: String,
     pub amount: f64,
+    /// "mainnet" (default) or "devnet" — see solana.networks in config.yaml.
+    #[serde(default)]
+    pub network: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -81,11 +87,17 @@ pub struct PrepareTransactionRequest {
     pub payer_pubkey: String, // Who pays fees and sends
     pub to_address: String,
     pub amount: f64,
+    /// "mainnet" (default) or "devnet" — see solana.networks in config.yaml.
+    #[serde(default)]
+    pub network: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct SubmitSignedRequest {
     pub signed_transaction: String, // Base64 encoded signed transaction
+    /// "mainnet" (default) or "devnet" — see solana.networks in config.yaml.
+    #[serde(default)]
+    pub network: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -101,6 +113,9 @@ pub struct SearchRequest {
 #[derive(Deserialize)]
 pub struct WalletTokensRequest {
     pub pubkey: String, // Public key to get tokens for
+    /// "mainnet" (default) or "devnet" — see solana.networks in config.yaml.
+    #[serde(default)]
+    pub network: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -186,6 +201,19 @@ pub struct WalletTokenInfo {
     pub usd_value: Option<f64>,
 }
 
+/// The config for the network a request names, or the error response to send
+/// back when it names one we do not serve.
+fn resolve_network<T>(config: &Config, network: Option<&str>) -> Result<Config, Json<ApiResponse<T>>> {
+    config.for_network(network).map_err(|e| {
+        app_log!(warn, "Rejected request: {}", e);
+        Json(ApiResponse {
+            success: false,
+            data: None,
+            error: Some(e),
+        })
+    })
+}
+
 // Helper function to parse public key
 fn parse_public_key(pubkey: &str) -> Result<Pubkey> {
     Ok(Pubkey::from_str(pubkey)?)
@@ -206,10 +234,14 @@ pub async fn get_balance(
     request: Json<BalanceRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<BalanceResponse>> {
+    let config = match resolve_network(config, request.network.as_deref()) {
+        Ok(c) => c,
+        Err(resp) => return resp,
+    };
     app_log!(info, "Balance request for pubkey: {}", request.pubkey);
 
     match parse_public_key(&request.pubkey) {
-        Ok(pubkey) => match wallet::get_balance_for_pubkey(config, &pubkey).await {
+        Ok(pubkey) => match wallet::get_balance_for_pubkey(&config, &pubkey).await {
             Ok(balance) => Json(ApiResponse {
                 success: true,
                 data: Some(BalanceResponse {
@@ -242,6 +274,20 @@ pub async fn prepare_swap(
     request: Json<PrepareSwapRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PrepareSwapResponse>> {
+    let config = match resolve_network(config, request.network.as_deref()) {
+        Ok(c) => c,
+        Err(resp) => return resp,
+    };
+    if !config.has_jupiter() {
+        return Json(ApiResponse {
+            success: false,
+            data: None,
+            error: Some(format!(
+                "Swaps go through Jupiter, which only runs on mainnet — not available on {}",
+                config.solana.network
+            )),
+        });
+    }
     app_log!(
         info,
         "Prepare swap request: {} {} -> {} for {}",
@@ -254,7 +300,7 @@ pub async fn prepare_swap(
     match parse_public_key(&request.payer_pubkey) {
         Ok(payer_pubkey) => {
             match jupiter::prepare_swap_transaction(
-                config,
+                &config,
                 &request.from_token,
                 &request.to_token,
                 request.amount,
@@ -296,6 +342,10 @@ pub async fn prepare_transaction(
     request: Json<PrepareTransactionRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PrepareTransactionResponse>> {
+    let config = match resolve_network(config, request.network.as_deref()) {
+        Ok(c) => c,
+        Err(resp) => return resp,
+    };
     app_log!(
         info,
         "Prepare transaction request: {} SOL from {} to {}",
@@ -307,7 +357,7 @@ pub async fn prepare_transaction(
     match parse_public_key(&request.payer_pubkey) {
         Ok(payer_pubkey) => {
             match transaction::prepare_sol_transfer(
-                config,
+                &config,
                 &payer_pubkey,
                 &request.to_address,
                 request.amount,
@@ -350,9 +400,13 @@ pub async fn submit_signed_transaction(
     request: Json<SubmitSignedRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<SubmitResponse>> {
+    let config = match resolve_network(config, request.network.as_deref()) {
+        Ok(c) => c,
+        Err(resp) => return resp,
+    };
     app_log!(info, "Submit signed transaction request");
 
-    match transaction::submit_signed_transaction(config, &request.signed_transaction).await {
+    match transaction::submit_signed_transaction(&config, &request.signed_transaction).await {
         Ok(signature) => Json(ApiResponse {
             success: true,
             data: Some(SubmitResponse {
@@ -449,18 +503,25 @@ pub async fn get_wallet_tokens(
     request: Json<WalletTokensRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<WalletTokensResponse>> {
+    let config = match resolve_network(config, request.network.as_deref()) {
+        Ok(c) => c,
+        Err(resp) => return resp,
+    };
     app_log!(info, "Wallet tokens request for pubkey: {}", request.pubkey);
 
     match parse_public_key(&request.pubkey) {
         Ok(pubkey) => {
-            match wallet::get_wallet_tokens_for_pubkey(config, &pubkey).await {
+            match wallet::get_wallet_tokens_for_pubkey(&config, &pubkey).await {
                 Ok(tokens) => {
                     let mut wallet_tokens = Vec::new();
 
                     for token in tokens {
                         // Try to get USD value
-                        let usd_value = if let Ok(price) =
-                            jupiter::get_token_price(config, &token.symbol).await
+                        // Jupiter prices mainnet tokens only; a devnet token has no market.
+                        let usd_value = if !config.has_jupiter() {
+                            None
+                        } else if let Ok(price) =
+                            jupiter::get_token_price(&config, &token.symbol).await
                         {
                             Some(token.balance * price)
                         } else {
@@ -558,11 +619,17 @@ pub struct TransactionHistoryRequest {
     pub pubkey: String,
     pub limit: Option<usize>,
     pub before: Option<String>, // Signature to paginate before
+    /// "mainnet" (default) or "devnet" — see solana.networks in config.yaml.
+    #[serde(default)]
+    pub network: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct PendingTransactionsRequest {
     pub pubkey: String,
+    /// "mainnet" (default) or "devnet" — see solana.networks in config.yaml.
+    #[serde(default)]
+    pub network: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -587,6 +654,10 @@ pub async fn get_transaction_history_web(
     request: Json<TransactionHistoryRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<TransactionHistoryResponse>> {
+    let config = match resolve_network(config, request.network.as_deref()) {
+        Ok(c) => c,
+        Err(resp) => return resp,
+    };
     app_log!(
         info,
         "Transaction history request for pubkey: {}",
@@ -596,7 +667,7 @@ pub async fn get_transaction_history_web(
     match parse_public_key(&request.pubkey) {
         Ok(pubkey) => {
             match transaction::fetch_transaction_history(
-                config,
+                &config,
                 &pubkey,
                 request.limit,
                 request.before.clone(),
@@ -651,6 +722,10 @@ pub async fn get_pending_transactions_web(
     request: Json<PendingTransactionsRequest>,
     config: &State<Config>,
 ) -> Json<ApiResponse<PendingTransactionsResponse>> {
+    let config = match resolve_network(config, request.network.as_deref()) {
+        Ok(c) => c,
+        Err(resp) => return resp,
+    };
     app_log!(
         info,
         "Pending transactions request for pubkey: {}",
@@ -658,7 +733,7 @@ pub async fn get_pending_transactions_web(
     );
 
     match parse_public_key(&request.pubkey) {
-        Ok(pubkey) => match transaction::fetch_pending_transactions(config, &pubkey).await {
+        Ok(pubkey) => match transaction::fetch_pending_transactions(&config, &pubkey).await {
             Ok(pending_transactions) => {
                 let count = pending_transactions.len();
 

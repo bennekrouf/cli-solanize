@@ -70,6 +70,30 @@ logging:
   format: "pretty"
 ```
 
+## Choosing the network per request
+
+The server serves every network under `solana.networks` in `config.yaml`
+(`mainnet`, the default, and `devnet`). A request picks one with an optional
+field; leaving it out means `solana.network`:
+
+```json
+POST /solana/balance
+{ "pubkey": "9WzD…", "network": "devnet" }
+```
+
+| Route | `network` |
+|---|---|
+| balance, wallet/tokens, transaction/prepare, transaction/submit, transactions/history, transactions/pending | honoured |
+| swap/prepare | mainnet only — Jupiter has no devnet; anything else is refused |
+| price, tokens/search | not taken — Jupiter data is always mainnet |
+
+`wallet/tokens` on devnet returns no `usd_value`: devnet tokens have no market.
+Submit a signed transaction to the same network it was prepared on — the
+blockhash belongs to that cluster.
+
+Set `SOLANIZE_RPC_URL_MAINNET` (or `_DEVNET`) to use a private RPC; the public
+mainnet endpoint is heavily rate-limited.
+
 ## Calling it through api0
 
 The server binds to `127.0.0.1` only. Remote callers reach it through nginx at

@@ -1,6 +1,7 @@
 use crate::app_log;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -39,9 +40,26 @@ pub struct InternalConfig {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SolanaConfig {
+    /// The active network. At load time this is the default one; a web request
+    /// can pick another through `Config::for_network`.
     pub network: String,
+    /// The active network's RPC. Filled from `networks` when that is set.
+    #[serde(default)]
     pub rpc_url: String,
     pub commitment: String,
+    /// Every network a request may choose, by name. Empty → only `network`.
+    #[serde(default)]
+    pub networks: BTreeMap<String, NetworkProfile>,
+}
+
+/// What changes from one Solana cluster to another.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct NetworkProfile {
+    /// Override with SOLANIZE_RPC_URL_<NAME> (e.g. SOLANIZE_RPC_URL_MAINNET),
+    /// so a paid RPC key stays out of config.yaml.
+    pub rpc_url: String,
+    /// USDC mint on this cluster; devnet's differs from mainnet's.
+    pub usdc: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -87,6 +105,25 @@ impl Config {
             }
         }
 
+        for (name, profile) in config.solana.networks.iter_mut() {
+            let var = format!("SOLANIZE_RPC_URL_{}", name.to_uppercase().replace('-', "_"));
+            if let Ok(url) = std::env::var(&var) {
+                if !url.is_empty() {
+                    profile.rpc_url = url;
+                }
+            }
+        }
+        if !config.solana.networks.is_empty() {
+            let default = config.solana.network.clone();
+            config = config
+                .for_network(Some(&default))
+                .map_err(|e| anyhow::anyhow!("solana.network: {}", e))?;
+        }
+        if config.solana.rpc_url.is_empty() {
+            anyhow::bail!("solana.rpc_url is empty and solana.networks has no '{}'", config.solana.network);
+        }
+        app_log!(info, "Solana networks: {} (default: {})", config.network_names().join(", "), config.solana.network);
+
         if let Ok(aud) = std::env::var("SOLANIZE_OIDC_AUDIENCE") {
             if !aud.is_empty() {
                 config.api0.oidc_audience = Some(aud);
@@ -110,5 +147,48 @@ impl Config {
 
         app_log!(info, "Config loaded successfully");
         Ok(config)
+    }
+}
+
+impl Config {
+    /// A copy of this config pointed at `network`, or at the default when
+    /// `None`. Everything downstream reads `solana.rpc_url` and `tokens`, so
+    /// swapping them here is all it takes to serve another cluster.
+    pub fn for_network(&self, network: Option<&str>) -> std::result::Result<Config, String> {
+        let name = match network.map(str::trim) {
+            None | Some("") => return Ok(self.clone()),
+            Some(n) => n.to_lowercase(),
+        };
+
+        if self.solana.networks.is_empty() {
+            return if name == self.solana.network {
+                Ok(self.clone())
+            } else {
+                Err(format!("unknown network '{}'; available: {}", name, self.solana.network))
+            };
+        }
+
+        let profile = self.solana.networks.get(&name).ok_or_else(|| {
+            format!("unknown network '{}'; available: {}", name, self.network_names().join(", "))
+        })?;
+
+        let mut config = self.clone();
+        config.solana.network = name;
+        config.solana.rpc_url = profile.rpc_url.clone();
+        config.tokens.usdc = profile.usdc.clone();
+        Ok(config)
+    }
+
+    pub fn network_names(&self) -> Vec<String> {
+        if self.solana.networks.is_empty() {
+            vec![self.solana.network.clone()]
+        } else {
+            self.solana.networks.keys().cloned().collect()
+        }
+    }
+
+    /// Jupiter (swaps, quotes, prices, token list) only exists on mainnet.
+    pub fn has_jupiter(&self) -> bool {
+        self.solana.network == "mainnet"
     }
 }
