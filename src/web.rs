@@ -63,6 +63,43 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+// api0 types every tool argument as a JSON Schema "string", so a model calling
+// through it sends "amount": "0.1". Accept a number either way rather than
+// answer 422 to a perfectly good request.
+fn number_or_string<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: FromStr + serde::de::DeserializeOwned,
+    T::Err: std::fmt::Display,
+{
+    parse_number(serde_json::Value::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+}
+
+/// Same, for an optional field: absent, null or "" all mean `None`.
+fn opt_number_or_string<'de, D, T>(deserializer: D) -> std::result::Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: FromStr + serde::de::DeserializeOwned,
+    T::Err: std::fmt::Display,
+{
+    match Option::<serde_json::Value>::deserialize(deserializer)? {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(s)) if s.trim().is_empty() => Ok(None),
+        Some(v) => parse_number(v).map(Some).map_err(serde::de::Error::custom),
+    }
+}
+
+fn parse_number<T>(value: serde_json::Value) -> std::result::Result<T, String>
+where
+    T: FromStr + serde::de::DeserializeOwned,
+    T::Err: std::fmt::Display,
+{
+    match value {
+        serde_json::Value::String(s) => s.trim().parse().map_err(|e| format!("'{}' is not a number: {}", s, e)),
+        other => serde_json::from_value(other).map_err(|e| e.to_string()),
+    }
+}
+
 #[derive(Deserialize)]
 pub struct BalanceRequest {
     pub pubkey: String, // Public key to check balance for
@@ -76,6 +113,7 @@ pub struct PrepareSwapRequest {
     pub payer_pubkey: String, // Who pays fees
     pub from_token: String,
     pub to_token: String,
+    #[serde(deserialize_with = "number_or_string")]
     pub amount: f64,
     /// "mainnet" (default) or "devnet" — see solana.networks in config.yaml.
     #[serde(default)]
@@ -86,6 +124,7 @@ pub struct PrepareSwapRequest {
 pub struct PrepareTransactionRequest {
     pub payer_pubkey: String, // Who pays fees and sends
     pub to_address: String,
+    #[serde(deserialize_with = "number_or_string")]
     pub amount: f64,
     /// "mainnet" (default) or "devnet" — see solana.networks in config.yaml.
     #[serde(default)]
@@ -614,9 +653,13 @@ pub async fn start_server(config: Config, port: u16) -> Result<()> {
     Ok(())
 }
 
+const HISTORY_DEFAULT_LIMIT: usize = 10;
+const HISTORY_MAX_LIMIT: usize = 10;
+
 #[derive(Deserialize)]
 pub struct TransactionHistoryRequest {
     pub pubkey: String,
+    #[serde(default, deserialize_with = "opt_number_or_string")]
     pub limit: Option<usize>,
     pub before: Option<String>, // Signature to paginate before
     /// "mainnet" (default) or "devnet" — see solana.networks in config.yaml.
@@ -664,19 +707,22 @@ pub async fn get_transaction_history_web(
         request.pubkey
     );
 
+    // Each transaction is fetched on its own (~1.3 s on the public RPC), and
+    // api0 gives a tool 30 s. Page with `before` for more.
+    let limit = request.limit.unwrap_or(HISTORY_DEFAULT_LIMIT).clamp(1, HISTORY_MAX_LIMIT);
+
     match parse_public_key(&request.pubkey) {
         Ok(pubkey) => {
             match transaction::fetch_transaction_history(
                 &config,
                 &pubkey,
-                request.limit,
+                Some(limit),
                 request.before.clone(),
             )
             .await
             {
                 Ok(transactions) => {
                     let total_count = transactions.len();
-                    let limit = request.limit.unwrap_or(50);
                     let has_more = total_count >= limit;
 
                     // Get next pagination token (last signature)

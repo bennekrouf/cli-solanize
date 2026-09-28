@@ -91,6 +91,11 @@ POST /solana/balance
 Submit a signed transaction to the same network it was prepared on — the
 blockhash belongs to that cluster.
 
+Numeric fields (`amount`, `limit`) accept a JSON number or a numeric string —
+api0 sends every tool argument as a string. `transactions/history` returns at
+most 10 per call (the default too): each is fetched separately, ~1.3 s on the
+public RPC, and api0 gives a tool 30 s. Page with `before` for more.
+
 Set `SOLANIZE_RPC_URL_MAINNET` (or `_DEVNET`) to use a private RPC; the public
 mainnet endpoint is heavily rate-limited.
 
