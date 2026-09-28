@@ -12,6 +12,22 @@ pub struct Config {
     pub jupiter: JupiterConfig,
     pub tokens: TokensConfig,
     pub internal: InternalConfig,
+    #[serde(default)]
+    pub api0: Api0Config,
+}
+
+/// Lets the api0 gateway call us from anywhere, the way it calls cvenom: it
+/// mints a Google OIDC identity token for `oidc_audience` with its service
+/// account, and we accept it only when it was minted by `oidc_service_account`.
+/// Pinning the account matters — any Google service account can mint a token
+/// for any audience. Both unset → the OIDC path is off and only the internal
+/// secret is accepted.
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct Api0Config {
+    /// Override with SOLANIZE_OIDC_AUDIENCE, e.g. "https://api.ribh.io".
+    pub oidc_audience: Option<String>,
+    /// Override with SOLANIZE_OIDC_SERVICE_ACCOUNT, the api0 tenant's SA email.
+    pub oidc_service_account: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -69,6 +85,23 @@ impl Config {
             if !secret.is_empty() {
                 config.internal.secret = secret;
             }
+        }
+
+        if let Ok(aud) = std::env::var("SOLANIZE_OIDC_AUDIENCE") {
+            if !aud.is_empty() {
+                config.api0.oidc_audience = Some(aud);
+            }
+        }
+        if let Ok(sa) = std::env::var("SOLANIZE_OIDC_SERVICE_ACCOUNT") {
+            if !sa.is_empty() {
+                config.api0.oidc_service_account = Some(sa);
+            }
+        }
+
+        match (&config.api0.oidc_audience, &config.api0.oidc_service_account) {
+            (Some(aud), Some(sa)) => app_log!(info, "api0 OIDC auth enabled — audience: {}, service account: {}", aud, sa),
+            (None, None) => {}
+            _ => app_log!(warn, "api0 OIDC auth needs both SOLANIZE_OIDC_AUDIENCE and SOLANIZE_OIDC_SERVICE_ACCOUNT — disabled"),
         }
 
         if config.internal.secret == "change-me-in-production" || config.internal.secret.len() < 16 {
