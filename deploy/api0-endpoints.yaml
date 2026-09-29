@@ -1,0 +1,189 @@
+# solanize endpoints for the api0 "Solanize" tenant.
+#
+#   api0 apis upload deploy/api0-endpoints.yaml --tenant <solanize tenant>
+#
+# Each endpoint becomes an MCP tool named slug("<group> <text>"), e.g.
+# "Solana" + "get balance" → `solana-get-balance`.
+#
+# ── How api0 reads this file (store-api0 mcp_tools_management.rs) ─────────────
+# • Every parameter becomes a JSON Schema "string". cli-solanize accepts numeric
+#   strings for `amount` and `limit`, so that is fine.
+# • `alternatives` becomes a JSON Schema `enum` — the only values the model may
+#   send. It is used here for `network` and nowhere else; do not put synonyms in it.
+# • POST sends the tool arguments verbatim as the JSON body, which is exactly
+#   the shape every /solana route takes.
+# • A tool gets 30 s. transactions/history is capped at 10 per call for that.
+#
+# ── Auth ──────────────────────────────────────────────────────────────────────
+# Not in this file. The tenant's downstream auth is `google_sa`
+# with target_audience https://api.ribh.io; cli-solanize checks that token's
+# audience and service account (SOLANIZE_OIDC_* in /opt/solanize/cli-solanize.env).
+# `forward_identity: false`: cli-solanize has no use for api0's internal secret
+# or the end user's email, so neither leaves api0.
+#
+# ── Money ─────────────────────────────────────────────────────────────────────
+# No tool here can move funds on its own. The prepare tools return an UNSIGNED
+# transaction; only the user's own wallet can sign it, and submit only
+# broadcasts what a wallet already signed. The server holds no user keys.
+
+api_groups:
+
+  - name: "Solana"
+    description: "Solana wallets, token prices and swaps (via Jupiter), on mainnet or devnet"
+    base: "https://api.ribh.io/solana"
+    forward_identity: false
+    endpoints:
+
+      # ── Read ──────────────────────────────────────────────────────────────────
+
+      - text: "get balance"
+        description: >-
+          SOL balance of any Solana address. Returns the balance in SOL (not lamports).
+        verb: "POST"
+        path: "/balance"
+        parameters:
+          - name: "pubkey"
+            description: "The wallet address (base58 public key)"
+            required: "true"
+          - name: "network"
+            description: "Solana cluster. Omit for mainnet; use devnet only when the user asks for it."
+            required: "false"
+            alternatives: ["mainnet", "devnet"]
+
+      - text: "get wallet tokens"
+        description: >-
+          Every token a wallet holds with a non-zero balance: symbol, name, mint,
+          balance and, on mainnet, USD value. Sorted by balance, largest first.
+          Can be long for wallets holding hundreds of tokens.
+        verb: "POST"
+        path: "/wallet/tokens"
+        parameters:
+          - name: "pubkey"
+            description: "The wallet address (base58 public key)"
+            required: "true"
+          - name: "network"
+            description: "Solana cluster. Omit for mainnet. Devnet tokens have no USD value."
+            required: "false"
+            alternatives: ["mainnet", "devnet"]
+
+      - text: "get token price"
+        description: >-
+          Current USD price of a token, from Jupiter (always mainnet prices).
+          Accepts a symbol (SOL, JUP, BONK…) or a mint address; prefer the mint
+          when the symbol is ambiguous.
+        verb: "POST"
+        path: "/price"
+        parameters:
+          - name: "token"
+            description: "Token symbol or mint address, e.g. SOL or JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
+            required: "true"
+
+      - text: "search tokens"
+        description: >-
+          Find tokens by symbol, name or mint, as Jupiter ranks them (up to 20,
+          mainnet). Use it to get the mint address a swap needs.
+        verb: "POST"
+        path: "/tokens/search"
+        parameters:
+          - name: "query"
+            description: "Symbol, name or mint to look for, e.g. bonk"
+            required: "true"
+
+      - text: "get transaction history"
+        description: >-
+          Recent transactions of a wallet, newest first, at most 10 per call.
+          For older ones, call again with `before` set to the returned next_before.
+        verb: "POST"
+        path: "/transactions/history"
+        parameters:
+          - name: "pubkey"
+            description: "The wallet address (base58 public key)"
+            required: "true"
+          - name: "limit"
+            description: "How many transactions, 1 to 10 (default 10)"
+            required: "false"
+          - name: "before"
+            description: "Signature to page before — the next_before of the previous call"
+            required: "false"
+          - name: "network"
+            description: "Solana cluster. Omit for mainnet."
+            required: "false"
+            alternatives: ["mainnet", "devnet"]
+
+      - text: "get pending transactions"
+        description: "Transactions of a wallet that are not yet finalized."
+        verb: "POST"
+        path: "/transactions/pending"
+        parameters:
+          - name: "pubkey"
+            description: "The wallet address (base58 public key)"
+            required: "true"
+          - name: "network"
+            description: "Solana cluster. Omit for mainnet."
+            required: "false"
+            alternatives: ["mainnet", "devnet"]
+
+      # ── Prepare (unsigned — the user's wallet signs) ──────────────────────────
+
+      - text: "prepare transfer"
+        description: >-
+          Build an UNSIGNED transaction sending SOL from one wallet to another.
+          Nothing is sent: the sender's own wallet must sign it, then it goes to
+          "submit transaction" on the same network. Returns the transaction
+          (base64), the required signers and its blockhash (valid ~1 minute).
+        verb: "POST"
+        path: "/transaction/prepare"
+        parameters:
+          - name: "payer_pubkey"
+            description: "Sender's wallet address; pays the fee and must sign"
+            required: "true"
+          - name: "to_address"
+            description: "Recipient's wallet address"
+            required: "true"
+          - name: "amount"
+            description: "Amount in SOL (not lamports), e.g. 0.5"
+            required: "true"
+          - name: "network"
+            description: "Solana cluster. Omit for mainnet."
+            required: "false"
+            alternatives: ["mainnet", "devnet"]
+
+      - text: "prepare swap"
+        description: >-
+          Build an UNSIGNED Jupiter swap transaction (mainnet only) with the quote:
+          expected output, price impact and route steps. Nothing is sent: the
+          payer's wallet must sign it, then it goes to "submit transaction".
+          Tokens must be SOL, USDC or a mint address — for anything else, get the
+          mint from "search tokens" first. Show the user the quote before they sign.
+        verb: "POST"
+        path: "/swap/prepare"
+        parameters:
+          - name: "payer_pubkey"
+            description: "Wallet address that swaps, pays the fee and must sign"
+            required: "true"
+          - name: "from_token"
+            description: "Token to sell: SOL, USDC or a mint address"
+            required: "true"
+          - name: "to_token"
+            description: "Token to buy: SOL, USDC or a mint address"
+            required: "true"
+          - name: "amount"
+            description: "Amount of from_token to sell, in whole tokens (e.g. 0.1 SOL), not base units"
+            required: "true"
+
+      # ── Broadcast ─────────────────────────────────────────────────────────────
+
+      - text: "submit transaction"
+        description: >-
+          Broadcast a transaction the user's wallet has already signed, and return
+          its signature. Use the same network it was prepared on.
+        verb: "POST"
+        path: "/transaction/submit"
+        parameters:
+          - name: "signed_transaction"
+            description: "The signed transaction, base64"
+            required: "true"
+          - name: "network"
+            description: "Solana cluster it was prepared on. Omit for mainnet."
+            required: "false"
+            alternatives: ["mainnet", "devnet"]

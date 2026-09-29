@@ -25,7 +25,7 @@ logging:
 
 jupiter:
   # Mainnet only. Without JUPITER_API_KEY the keyless tier is used; with it,
-  # the keyed one (limits are per key — get one at portal.jup.ag).
+  # the keyed one (limits are per key — get one at developers.jup.ag).
   base_url: "https://lite-api.jup.ag"
   keyed_base_url: "https://api.jup.ag"
   slippage_bps: 50  # 0.5%
