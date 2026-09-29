@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 
 // ── api0 gateway OIDC verification ────────────────────────────────────────────
 // The api0 gateway authenticates to us with a Google identity token minted by
-// the tenant's service account (downstream auth mode `google_service_account`).
+// the tenant's service account (downstream auth mode `google_sa`).
 // Same scheme cvenom uses, so solanize can live on any server api0 can reach.
 
 const GOOGLE_CERTS_URL: &str = "https://www.googleapis.com/oauth2/v3/certs";

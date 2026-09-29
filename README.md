@@ -46,9 +46,11 @@ All parameters are managed in `config.yaml`:
 
 ```yaml
 solana:
-  network: "devnet"
-  rpc_url: "https://api.devnet.solana.com"
+  network: "mainnet"          # default when a request names none
   commitment: "confirmed"
+  networks:
+    mainnet: { rpc_url: "https://api.mainnet-beta.solana.com", usdc: "EPjF…Dt1v" }
+    devnet:  { rpc_url: "https://api.devnet.solana.com",       usdc: "4zMM…ncDU" }
 
 wallet:
   keypair_path: "./wallet.json"
@@ -57,8 +59,8 @@ faucet:
   airdrop_amount: 1.0
 
 jupiter:
-  api_url: "https://quote-api.jup.ag/v6"
-  price_api_url: "https://price.jup.ag/v4"
+  base_url: "https://lite-api.jup.ag"   # keyless
+  keyed_base_url: "https://api.jup.ag"  # with JUPITER_API_KEY (developers.jup.ag)
   slippage_bps: 50  # 0.5%
 
 tokens:
@@ -142,7 +144,7 @@ SOLANIZE_OIDC_SERVICE_ACCOUNT=<api0 tenant service account email>
 The token's audience and the service account that minted it are both checked;
 any Google service account can mint a token for any audience, so the audience
 alone proves nothing. On the api0 side the tenant uses downstream auth
-`google_service_account` with `target_audience` set to the same URL.
+`google_sa` with `target_audience` set to the same URL.
 
 ## Commands
 
