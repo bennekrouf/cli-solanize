@@ -556,16 +556,8 @@ pub async fn get_wallet_tokens(
 
                     for token in tokens {
                         // Try to get USD value
-                        // Jupiter prices mainnet tokens only; a devnet token has no market.
-                        let usd_value = if !config.has_jupiter() {
-                            None
-                        } else if let Ok(price) =
-                            jupiter::get_token_price(&config, &token.symbol).await
-                        {
-                            Some(token.balance * price)
-                        } else {
-                            None
-                        };
+                        // Priced in the same lookup that named it (mainnet only)
+                        let usd_value = token.usd_price.map(|price| token.balance * price);
 
                         wallet_tokens.push(WalletTokenInfo {
                             symbol: token.symbol,

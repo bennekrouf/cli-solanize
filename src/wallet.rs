@@ -16,6 +16,8 @@ pub struct TokenBalance {
     pub balance: f64,
     pub decimals: u8,
     pub ui_amount: Option<f64>,
+    /// USD per token, from Jupiter (mainnet only).
+    pub usd_price: Option<f64>,
 }
 
 pub async fn generate_wallet(config: &Config) -> Result<()> {
@@ -55,6 +57,7 @@ pub async fn get_wallet_tokens(config: &Config) -> Result<Vec<TokenBalance>> {
             balance: sol_balance,
             decimals: 9,
             ui_amount: Some(sol_balance),
+            usd_price: None,
         });
     }
 
@@ -99,22 +102,8 @@ pub async fn get_wallet_tokens(config: &Config) -> Result<Vec<TokenBalance>> {
                         continue;
                     }
 
-                    // Try to get token info from Jupiter
-                    let (symbol, name) = match token::get_token_info(config, &mint).await {
-                        Ok(Some(token_info)) => (token_info.symbol, token_info.name),
-                        _ => {
-                            // Fallback: use mint address as symbol
-                            let short_mint = if mint.len() > 8 {
-                                format!("{}..{}", &mint[..4], &mint[mint.len() - 4..])
-                            } else {
-                                mint.clone()
-                            };
-                            (
-                                short_mint.clone(),
-                                format!("Unknown Token ({})", short_mint),
-                            )
-                        }
-                    };
+                    // Placeholder until enrich_tokens names it (one batched lookup)
+                    let (symbol, name) = placeholder_name(&mint);
 
                     token_balances.push(TokenBalance {
                         mint: mint.clone(),
@@ -123,11 +112,14 @@ pub async fn get_wallet_tokens(config: &Config) -> Result<Vec<TokenBalance>> {
                         balance: ui_amount,
                         decimals,
                         ui_amount: Some(ui_amount),
+                        usd_price: None,
                     });
                 }
             }
         }
     }
+
+    enrich_tokens(config, &mut token_balances).await;
 
     // Sort by balance descending
     token_balances.sort_by(|a, b| {
@@ -137,6 +129,37 @@ pub async fn get_wallet_tokens(config: &Config) -> Result<Vec<TokenBalance>> {
     });
 
     Ok(token_balances)
+}
+
+fn placeholder_name(mint: &str) -> (String, String) {
+    let short = if mint.len() > 8 {
+        format!("{}..{}", &mint[..4], &mint[mint.len() - 4..])
+    } else {
+        mint.to_string()
+    };
+    (short.clone(), format!("Unknown Token ({})", short))
+}
+
+/// Names and USD prices for every token in one Jupiter lookup per 100 mints,
+/// instead of a search and a price call per token. Mainnet only; on other
+/// networks — or if Jupiter fails — tokens keep their placeholder names.
+async fn enrich_tokens(config: &Config, tokens: &mut [TokenBalance]) {
+    if !config.has_jupiter() || tokens.is_empty() {
+        return;
+    }
+    let mints: Vec<String> = tokens.iter().map(|t| t.mint.clone()).collect();
+    match token::lookup_mints(config, &mints).await {
+        Ok(found) => {
+            for t in tokens.iter_mut() {
+                if let Some(info) = found.get(&t.mint) {
+                    t.symbol = info.symbol.clone();
+                    t.name = info.name.clone();
+                    t.usd_price = info.usd_price;
+                }
+            }
+        }
+        Err(e) => app_log!(warn, "Token lookup failed, keeping mint names: {}", e),
+    }
 }
 
 pub async fn list_wallet_tokens(config: &Config) -> Result<()> {
@@ -164,7 +187,7 @@ pub async fn list_wallet_tokens(config: &Config) -> Result<()> {
         );
 
         // Show USD value if we can get price
-        if let Ok(price) = crate::jupiter::get_token_price(config, &token.symbol).await {
+        if let Some(price) = token.usd_price {
             let usd_value = token.balance * price;
             app_log!(info, "   💲 ~${:.2} (${:.6} per token)", usd_value, price);
         }
@@ -252,6 +275,7 @@ pub async fn get_wallet_tokens_for_pubkey(
             balance: sol_balance,
             decimals: 9,
             ui_amount: Some(sol_balance),
+            usd_price: None,
         });
     }
 
@@ -291,22 +315,8 @@ pub async fn get_wallet_tokens_for_pubkey(
                         continue;
                     }
 
-                    // Try to get token info from Jupiter
-                    let (symbol, name) = match token::get_token_info(config, &mint).await {
-                        Ok(Some(token_info)) => (token_info.symbol, token_info.name),
-                        _ => {
-                            // Fallback: use mint address as symbol
-                            let short_mint = if mint.len() > 8 {
-                                format!("{}..{}", &mint[..4], &mint[mint.len() - 4..])
-                            } else {
-                                mint.clone()
-                            };
-                            (
-                                short_mint.clone(),
-                                format!("Unknown Token ({})", short_mint),
-                            )
-                        }
-                    };
+                    // Placeholder until enrich_tokens names it (one batched lookup)
+                    let (symbol, name) = placeholder_name(&mint);
 
                     token_balances.push(TokenBalance {
                         mint: mint.clone(),
@@ -315,11 +325,14 @@ pub async fn get_wallet_tokens_for_pubkey(
                         balance: ui_amount,
                         decimals,
                         ui_amount: Some(ui_amount),
+                        usd_price: None,
                     });
                 }
             }
         }
     }
+
+    enrich_tokens(config, &mut token_balances).await;
 
     // Sort by balance descending
     token_balances.sort_by(|a, b| {
