@@ -99,6 +99,26 @@ public RPC, and api0 gives a tool 30 s. Page with `before` for more.
 Set `SOLANIZE_RPC_URL_MAINNET` (or `_DEVNET`) to use a private RPC; the public
 mainnet endpoint is heavily rate-limited.
 
+## Jupiter
+
+Swap, price, token search and wallet token names come from Jupiter
+(mainnet only), through one client in `src/jupiter.rs`:
+
+| `JUPITER_API_KEY` | Host | Limits |
+|---|---|---|
+| unset | `lite-api.jup.ag` | keyless, shared with everyone |
+| set | `api.jup.ag` + `x-api-key` | per key, by plan |
+
+The key is the backend's, set once in `/opt/solanize/cli-solanize.env`. It is
+not a user credential: Jupiter never acts as anyone — it quotes and builds
+unsigned transactions, and the user's own wallet signs. So it belongs neither
+to api0's tenant nor to each end user; rate-limiting individual users is
+api0's job (credits), not Jupiter's. A 429 surfaces as a clear error.
+
+Swaps take `SOL`, `USDC` or a mint address — never a symbol lookup, since
+symbols are not unique and a wrong guess moves real money. Find a mint with
+`tokens/search`. Decimals come from Jupiter, not an assumption.
+
 ## Calling it through api0
 
 The server binds to `127.0.0.1` only. Remote callers reach it through nginx at

@@ -384,7 +384,7 @@ impl InteractiveMenu {
         app_log!(info, "RPC URL: {}", self.config.solana.rpc_url);
         app_log!(info, "Wallet Path: {}", self.config.wallet.keypair_path);
         app_log!(info, "Log Level: {}", self.config.logging.level);
-        app_log!(info, "Jupiter API: {}", self.config.jupiter.api_url);
+        app_log!(info, "Jupiter API: {}", self.config.jupiter.base());
         app_log!(info, "Slippage: {}bps", self.config.jupiter.slippage_bps);
 
         Ok(())

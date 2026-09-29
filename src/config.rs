@@ -80,9 +80,21 @@ pub struct LoggingConfig {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct JupiterConfig {
-    pub api_url: String,
-    pub price_api_url: String,
+    /// Keyless tier, used when no API key is set.
+    pub base_url: String,
+    /// Keyed tier; limits are per key. Used when `api_key` is set.
+    pub keyed_base_url: String,
+    /// Set with JUPITER_API_KEY, never in config.yaml. One key for the whole
+    /// backend — it is solanize's quota, not a user's (see README).
+    #[serde(default, skip_serializing)]
+    pub api_key: Option<String>,
     pub slippage_bps: u16,
+}
+
+impl JupiterConfig {
+    pub fn base(&self) -> &str {
+        if self.api_key.is_some() { &self.keyed_base_url } else { &self.base_url }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -123,6 +135,18 @@ impl Config {
             anyhow::bail!("solana.rpc_url is empty and solana.networks has no '{}'", config.solana.network);
         }
         app_log!(info, "Solana networks: {} (default: {})", config.network_names().join(", "), config.solana.network);
+
+        if let Ok(key) = std::env::var("JUPITER_API_KEY") {
+            if !key.trim().is_empty() {
+                config.jupiter.api_key = Some(key.trim().to_string());
+            }
+        }
+        app_log!(
+            info,
+            "Jupiter: {} ({})",
+            config.jupiter.base(),
+            if config.jupiter.api_key.is_some() { "API key" } else { "keyless — set JUPITER_API_KEY for higher limits" }
+        );
 
         if let Ok(aud) = std::env::var("SOLANIZE_OIDC_AUDIENCE") {
             if !aud.is_empty() {
