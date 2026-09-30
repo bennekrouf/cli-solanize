@@ -137,14 +137,16 @@ Every route except `/solana/health` accepts one of:
 The OIDC path is on when both are set (env, or `api0:` in `config.yaml`):
 
 ```bash
-SOLANIZE_OIDC_AUDIENCE=https://api.ribh.io
-SOLANIZE_OIDC_SERVICE_ACCOUNT=<api0 tenant service account email>
+SOLANIZE_OIDC_AUDIENCE=https://api.ribh.io/api0/tenant/<solanize tenant id>
+SOLANIZE_OIDC_SERVICE_ACCOUNT=<api0's platform service account email>
 ```
 
 The token's audience and the service account that minted it are both checked;
 any Google service account can mint a token for any audience, so the audience
-alone proves nothing. On the api0 side the tenant uses downstream auth
-`google_sa` with `target_audience` set to the same URL.
+alone proves nothing. On the api0 side the tenant sets downstream auth
+`google_sa` with no key: the gateway signs as api0 and scopes the audience to
+the tenant, so a token minted for any other tenant never matches (see
+MCP_GATEWAY.md, "api0's own identity").
 
 ## Commands
 
