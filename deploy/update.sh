@@ -67,10 +67,19 @@ for SERVICE in "${SERVICES[@]}"; do
   [ -d "$TARGET/.git" ] || err "$TARGET is not a git checkout — clone it first"
   OWNER=$(stat -c %U "$TARGET")
   # Commit any local changes (e.g. posts published on the host), then pull
+  #
+  # --rebase is required, not stylistic. The auto-commit above creates commits
+  # that exist only on the host, and the push below is allowed to fail — so they
+  # can stay here indefinitely. Once origin moves too, the branch has diverged,
+  # and git >= 2.27 refuses to pull without being told how to reconcile.
+  #
+  # Rebase replays the host's commits (published posts, mostly) on top of
+  # origin: history stays linear and no merge commit appears on every deploy.
   $GIT -C "$TARGET" add -A
   $GIT -C "$TARGET" diff --cached --quiet || $GIT -C "$TARGET" commit -m "auto-commit local changes before deploy"
-  GIT_SSH_COMMAND="$GIT_SSH" $GIT -C "$TARGET" pull
-  GIT_SSH_COMMAND="$GIT_SSH" $GIT -C "$TARGET" push || warn "  $SERVICE: push failed — local commits stay on the host"
+  GIT_SSH_COMMAND="$GIT_SSH" $GIT -C "$TARGET" pull --rebase
+  GIT_SSH_COMMAND="$GIT_SSH" $GIT -C "$TARGET" push \
+    || warn "  $SERVICE: push failed — local commits stay on the host and will be rebased forward on the next deploy"
   # git ran as root → give the tree back to whoever builds it
   chown -R "$OWNER:$OWNER" "$TARGET"
   log "  $SERVICE updated ($($GIT -C "$TARGET" log --oneline -1))"
