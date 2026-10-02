@@ -12,7 +12,10 @@ const GOOGLE_CERTS_URL: &str = "https://www.googleapis.com/oauth2/v3/certs";
 
 pub struct OidcVerifier {
     audience: String,
-    service_account: String,
+    /// Allowed signers. Several during a key rotation, comma-separated in
+    /// SOLANIZE_OIDC_SERVICE_ACCOUNT: the gateway caches a signed token for up
+    /// to an hour, so the old signer must stay accepted that long after a swap.
+    service_accounts: Vec<String>,
     jwks: RwLock<Option<JwkSet>>,
 }
 
@@ -21,7 +24,7 @@ impl OidcVerifier {
     pub fn from_config(api0: &crate::config::Api0Config) -> Option<Self> {
         Some(Self {
             audience: api0.oidc_audience.clone()?,
-            service_account: api0.oidc_service_account.clone()?,
+            service_accounts: parse_accounts(api0.oidc_service_account.as_deref()?)?,
             jwks: RwLock::new(None),
         })
     }
@@ -61,7 +64,8 @@ impl OidcVerifier {
 
         let email = data.claims["email"].as_str().unwrap_or_default();
         let verified = data.claims["email_verified"].as_bool().unwrap_or(false);
-        if !verified || !email.eq_ignore_ascii_case(&self.service_account) {
+        let email_lc = email.to_lowercase();
+        if !verified || !self.service_accounts.iter().any(|a| *a == email_lc) {
             return Err(anyhow!("OIDC token minted by '{}', not the api0 service account", email));
         }
         Ok(())
@@ -80,5 +84,32 @@ impl OidcVerifier {
         app_log!(info, "Refreshed Google OIDC keys ({} keys)", jwks.keys.len());
         *self.jwks.write().await = Some(jwks);
         Ok(())
+    }
+}
+
+
+/// The comma-separated signer list, lowercased. `None` when it names nobody:
+/// an empty allowlist must switch the OIDC path off, never accept everyone.
+fn parse_accounts(value: &str) -> Option<Vec<String>> {
+    let accounts: Vec<String> = value
+        .split(',')
+        .map(|a| a.trim().to_lowercase())
+        .filter(|a| !a.is_empty())
+        .collect();
+    (!accounts.is_empty()).then_some(accounts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_accounts;
+
+    #[test]
+    fn signers_parse_as_a_list_and_an_empty_one_is_none() {
+        assert_eq!(
+            parse_accounts(" Old@p.iam.gserviceaccount.com, new@p.iam.gserviceaccount.com ,"),
+            Some(vec!["old@p.iam.gserviceaccount.com".to_string(), "new@p.iam.gserviceaccount.com".to_string()])
+        );
+        assert_eq!(parse_accounts(" , "), None);
+        assert_eq!(parse_accounts(""), None);
     }
 }
