@@ -138,7 +138,7 @@ The OIDC path is on when both are set (env, or `api0:` in `config.yaml`):
 
 ```bash
 SOLANIZE_OIDC_AUDIENCE=https://api.ribh.io/api0/tenant/<solanize tenant id>
-SOLANIZE_OIDC_SERVICE_ACCOUNT=<api0's platform service account email>
+SOLANIZE_OIDC_SERVICE_ACCOUNT=<api0's platform service account email>   # comma-separated during a key rotation
 ```
 
 The token's audience and the service account that minted it are both checked;
